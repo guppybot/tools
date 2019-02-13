@@ -144,6 +144,10 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "guppybot-bin"
+version = "0.0.0"
+
+[[package]]
 name = "guppyctl"
 version = "0.0.0"
 dependencies = [
