@@ -19,6 +19,12 @@ pub fn dispatch(guppybot_bin: &[u8]) -> ! {
         .help("Debug option: alternative sysroot path. The default sysroot\npath is '/var/lib/guppybot'.")
       )
     )
+    .subcommand(SubCommand::with_name("print-config")
+      .about("Print the currently loaded configuration")
+    )
+    /*.subcommand(SubCommand::with_name("reload-config")
+      .about("Reload configuration")
+    )*/
     .subcommand(SubCommand::with_name("run")
       .about("Run a local gup.py script in a local working directory")
       .arg(Arg::with_name("FILE")
@@ -51,6 +57,15 @@ pub fn dispatch(guppybot_bin: &[u8]) -> ! {
       let alt_sysroot_path = matches.value_of("DEBUG_ALT_SYSROOT")
         .map(|s| PathBuf::from(s));
       match install_self(alt_sysroot_path, guppybot_bin) {
+        Err(e) => {
+          eprintln!("{:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
+    ("print-config", Some(_matches)) => {
+      match print_config() {
         Err(e) => {
           eprintln!("{:?}", e);
           1

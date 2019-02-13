@@ -10,6 +10,7 @@ extern crate schemas;
 #[macro_use] extern crate serde_derive;
 extern crate tempfile;
 extern crate toml;
+extern crate url;
 
 pub mod assets;
 pub mod config;

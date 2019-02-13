@@ -12,7 +12,7 @@ use schemas::wire_protocol::{DistroInfoV0, GpusV0};
 use semver::{Version};
 use serde_json::{Value as JsonValue};
 use tempfile::{NamedTempFile};
-use tooling::config::{Config};
+use tooling::config::{Config, ApiConfig, MachineConfig, CiConfig};
 use tooling::deps::{DockerDeps, Docker, NvidiaDocker2};
 use tooling::docker::{GitCheckoutSpec};
 use tooling::query::{Maybe, Query, fail};
@@ -60,6 +60,19 @@ pub fn install_self(alt_sysroot_path: Option<PathBuf>, _guppybot_bin: &[u8]) -> 
   println!();
   Ok(())
 }
+
+pub fn print_config() -> Maybe {
+  let api_cfg = ApiConfig::open_default().ok();
+  let machine_cfg = MachineConfig::open_default().ok();
+  let ci_cfg = CiConfig::open_default().ok();
+  println!("API config: {:?}", api_cfg);
+  println!("Machine config: {:?}", machine_cfg);
+  println!("CI config: {:?}", ci_cfg);
+  Ok(())
+}
+
+/*pub fn reload_config() -> Maybe {
+}*/
 
 pub fn run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
   let sysroot = Sysroot::default();
