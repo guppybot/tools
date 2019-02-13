@@ -8,10 +8,11 @@ extern crate tooling;
 
 use curl::easy::{Easy, List};
 use minisodium::{sign_verify};
-use schemas::wire_protocol::{DistroInfoV0};
+use schemas::wire_protocol::{DistroInfoV0, GpusV0};
 use semver::{Version};
 use serde_json::{Value as JsonValue};
 use tempfile::{NamedTempFile};
+use tooling::config::{Config};
 use tooling::deps::{DockerDeps, Docker, NvidiaDocker2};
 use tooling::docker::{GitCheckoutSpec};
 use tooling::query::{Maybe, Query, fail};
@@ -43,6 +44,9 @@ pub fn install_self(alt_sysroot_path: Option<PathBuf>, _guppybot_bin: &[u8]) -> 
     .map_err(|_| fail("Failed to create guppybot daemon file: are you root?"))?;
   bot_file.write_all(guppybot_bin)
     .map_err(|_| fail("Failed to write guppybot daemon file: are you root?"))?;*/
+  let gpus = GpusV0::query()?;
+  let config = Config::default();
+  config.install_default(&gpus)?;
   let sysroot = match alt_sysroot_path {
     Some(base_dir) => Sysroot{base_dir},
     None => Sysroot::default(),
@@ -51,6 +55,7 @@ pub fn install_self(alt_sysroot_path: Option<PathBuf>, _guppybot_bin: &[u8]) -> 
   println!("Self-installation complete!");
   println!("Guppybot-related files have been installed to:");
   println!();
+  println!("    {}", config.config_dir.display());
   println!("    {}", sysroot.base_dir.display());
   println!();
   Ok(())
