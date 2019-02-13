@@ -1,0 +1,12 @@
+[package]
+name = "guppyctl-bin"
+version = "0.0.0"
+edition = "2018"
+authors = ["Peter Jin <peter@guppybot.org>"]
+
+[dependencies]
+guppyctl = { path = "../../guppyctl" }
+
+[[bin]]
+name = "guppyctl"
+path = "main.rs"

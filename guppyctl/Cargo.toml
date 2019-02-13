@@ -1,0 +1,16 @@
+[package]
+name = "guppyctl"
+version = "0.0.0"
+edition = "2018"
+authors = ["Peter Jin <peter@guppybot.org>"]
+workspace = "../tools"
+
+[dependencies]
+clap = "~2.32.0"
+curl = "^0.4"
+minisodium = { path = "../../minisodium" }
+#schemas = { path = "../../schemas" }
+semver = "^0.9"
+serde_json = "^1.0"
+tempfile = "^3.0"
+tooling = { path = "../tooling" }

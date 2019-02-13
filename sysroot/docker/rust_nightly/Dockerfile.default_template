@@ -1,0 +1,12 @@
+ENV CARGO_HOME=/cargo \
+    RUSTUP_HOME=/rustup \
+    PATH=/cargo/bin:$PATH
+
+RUN echo $PATH && \
+    apt-get update && apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends ca-certificates curl git clang-3.9 && \
+    mkdir -p $CARGO_HOME && mkdir -p $RUSTUP_HOME && \
+    curl -fsS https://sh.rustup.rs > /rustup-init.sh && chmod +x /rustup-init.sh && \
+    sh /rustup-init.sh -v -y --no-modify-path --default-toolchain nightly && \
+    rustup component add --toolchain nightly rust-src rustfmt && \
+    cargo search -vv --limit 0
