@@ -13,6 +13,11 @@ pub fn dispatch(guppybot_bin: &[u8]) -> ! {
     .version("beta")
     .subcommand(SubCommand::with_name("install-self")
       .about("Install guppybot")
+      .arg(Arg::with_name("DEBUG_ALT_SYSROOT")
+        .long("debug-alt-sysroot")
+        .takes_value(true)
+        .help("Debug option: alternative sysroot path. The default sysroot\npath is '/var/lib/guppybot'.")
+      )
     )
     .subcommand(SubCommand::with_name("run")
       .about("Run a local gup.py script in a local working directory")
@@ -42,8 +47,10 @@ pub fn dispatch(guppybot_bin: &[u8]) -> ! {
     )
   ;
   let code = match app.clone().get_matches().subcommand() {
-    ("install-self", Some(_matches)) => {
-      match install_self(guppybot_bin) {
+    ("install-self", Some(matches)) => {
+      let alt_sysroot_path = matches.value_of("DEBUG_ALT_SYSROOT")
+        .map(|s| PathBuf::from(s));
+      match install_self(alt_sysroot_path, guppybot_bin) {
         Err(e) => {
           eprintln!("{:?}", e);
           1

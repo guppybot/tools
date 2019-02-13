@@ -37,13 +37,16 @@ pub fn install_deps() -> Maybe {
   Ok(())
 }
 
-pub fn install_self(_guppybot_bin: &[u8]) -> Maybe {
+pub fn install_self(alt_sysroot_path: Option<PathBuf>, _guppybot_bin: &[u8]) -> Maybe {
   // FIXME: reenable the daemon installation.
   /*let mut bot_file = File::create("/usr/local/lib/guppybot")
     .map_err(|_| fail("Failed to create guppybot daemon file: are you root?"))?;
   bot_file.write_all(guppybot_bin)
     .map_err(|_| fail("Failed to write guppybot daemon file: are you root?"))?;*/
-  let sysroot = Sysroot::default();
+  let sysroot = match alt_sysroot_path {
+    Some(base_dir) => Sysroot{base_dir},
+    None => Sysroot::default(),
+  };
   sysroot.install()?;
   println!("Self-installation complete!");
   println!("Guppybot-related files have been installed to:");
