@@ -11,6 +11,9 @@ use std::process::{exit};
 pub fn dispatch(guppybot_bin: &[u8]) -> ! {
   let mut app = App::new("guppyctl")
     .version("beta")
+    .subcommand(SubCommand::with_name("install-self")
+      .about("Install guppybot")
+    )
     .subcommand(SubCommand::with_name("run")
       .about("Run a local gup.py script in a local working directory")
       .arg(Arg::with_name("FILE")
@@ -39,6 +42,15 @@ pub fn dispatch(guppybot_bin: &[u8]) -> ! {
     )
   ;
   let code = match app.clone().get_matches().subcommand() {
+    ("install-self", Some(_matches)) => {
+      match install_self(guppybot_bin) {
+        Err(e) => {
+          eprintln!("{:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
     ("run", Some(matches)) => {
       let gup_py_path = PathBuf::from(matches.value_of("FILE")
         .unwrap_or_else(|| "gup.py"));
