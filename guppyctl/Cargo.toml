@@ -9,7 +9,7 @@ workspace = "../tools"
 clap = "~2.32.0"
 curl = "^0.4"
 minisodium = { path = "../../minisodium" }
-#schemas = { path = "../../schemas" }
+schemas = { path = "../../schemas" }
 semver = "^0.9"
 serde_json = "^1.0"
 tempfile = "^3.0"

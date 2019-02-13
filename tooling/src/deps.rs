@@ -1,9 +1,9 @@
 use crate::query::{Maybe, fail};
 
 use schemas::wire_protocol::{
-  DistroIdV0,
-  DistroCodenameV0,
-  SystemSetupV0,
+  DistroIdV0::*,
+  DistroCodenameV0::*,
+  DistroInfoV0,
 };
 
 use std::fs::{File};
@@ -31,6 +31,7 @@ fn query_deb<S: AsRef<str>>(deb_name: S) -> Maybe<bool> {
   match parts.len() {
     0 => Ok(false),
     _ => {
+      // FIXME: the first token can also include the arch, e.g. "amd64".
       if parts[0] == deb_name.as_ref() {
         Ok(true)
       } else {
@@ -48,7 +49,7 @@ fn add_deb_if_missing<S: AsRef<str>>(missing_pkgs: &mut Vec<Pkg>, deb_name: S) -
 }
 
 impl DockerDeps {
-  fn check_debian(_system: &SystemSetupV0) -> Maybe<DockerDeps> {
+  fn check_debian(_distro_info: &DistroInfoV0) -> Maybe<DockerDeps> {
     let mut missing_pkgs = Vec::new();
     add_deb_if_missing(&mut missing_pkgs, "apt-transport-https")?;
     add_deb_if_missing(&mut missing_pkgs, "ca-certificates")?;
@@ -58,14 +59,14 @@ impl DockerDeps {
   }
 
   fn check_ubuntu() -> Maybe<DockerDeps> {
-    unimplemented!();
+    Err(fail("TODO: docker dependencies on ubuntu"))
   }
 
-  pub fn check(system: &SystemSetupV0) -> Maybe<DockerDeps> {
-    match system.distro_info.id {
-      DistroIdV0::Debian => DockerDeps::check_debian(system),
-      DistroIdV0::Ubuntu => DockerDeps::check_ubuntu(),
-      _ => unimplemented!(),
+  pub fn check(distro_info: &DistroInfoV0) -> Maybe<DockerDeps> {
+    match distro_info.id {
+      Debian => DockerDeps::check_debian(distro_info),
+      Ubuntu => DockerDeps::check_ubuntu(),
+      _ => Err(fail("docker dependencies: unsupported distro")),
     }
   }
 
@@ -85,10 +86,17 @@ impl DockerDeps {
   }
 }
 
-pub struct InstallDocker;
+pub struct Docker;
 
-impl InstallDocker {
-  fn do_it_debian(system: &SystemSetupV0) -> Maybe {
+impl Docker {
+  pub fn check(distro_info: &DistroInfoV0) -> Maybe<bool> {
+    match distro_info.id {
+      Debian => query_deb("docker-ce"),
+      _ => Err(fail("install nvidia-docker2: unsupported distro")),
+    }
+  }
+
+  fn install_debian(distro_info: &DistroInfoV0) -> Maybe {
     let curl_cmd = Command::new("curl")
       .arg("-fsSL")
       .arg("https://download.docker.com/linux/debian/gpg")
@@ -103,11 +111,11 @@ impl InstallDocker {
       return Err(fail(format!("`apt-key` failed with exit status: {:?}", output.status.code())));
     }
     {
-      let debian_codename = match system.distro_info.codename {
-        Some(DistroCodenameV0::DebianWheezy) => "wheezy",
-        Some(DistroCodenameV0::DebianJessie) => "jessie",
-        Some(DistroCodenameV0::DebianStretch) => "stretch",
-        Some(DistroCodenameV0::DebianBuster) => "buster",
+      let debian_codename = match distro_info.codename {
+        Some(DebianWheezy) => "wheezy",
+        Some(DebianJessie) => "jessie",
+        Some(DebianStretch) => "stretch",
+        Some(DebianBuster) => "buster",
         _ => panic!("bug"),
       };
       let mut apt_source_file = File::create("/etc/apt/sources.list.d/guppybot_docker.list")
@@ -130,23 +138,30 @@ impl InstallDocker {
     Ok(())
   }
 
-  fn do_it_ubuntu() -> Maybe {
-    unimplemented!();
+  fn install_ubuntu() -> Maybe {
+    Err(fail("TODO: install docker on ubuntu"))
   }
 
-  pub fn do_it(system: &SystemSetupV0) -> Maybe {
-    match system.distro_info.id {
-      DistroIdV0::Debian => InstallDocker::do_it_debian(system),
-      DistroIdV0::Ubuntu => InstallDocker::do_it_ubuntu(),
-      _ => unimplemented!(),
+  pub fn install(distro_info: &DistroInfoV0) -> Maybe {
+    match distro_info.id {
+      Debian => Docker::install_debian(distro_info),
+      Ubuntu => Docker::install_ubuntu(),
+      _ => Err(fail("install docker: unsupported distro")),
     }
   }
 }
 
-pub struct InstallNvidiaDocker;
+pub struct NvidiaDocker2;
 
-impl InstallNvidiaDocker {
-  fn do_it_debian(system: &SystemSetupV0) -> Maybe {
+impl NvidiaDocker2 {
+  pub fn check(distro_info: &DistroInfoV0) -> Maybe<bool> {
+    match distro_info.id {
+      Debian => query_deb("nvidia-docker2"),
+      _ => Err(fail("install nvidia-docker2: unsupported distro")),
+    }
+  }
+
+  fn install_debian(distro_info: &DistroInfoV0) -> Maybe {
     let curl_cmd = Command::new("curl")
       .arg("-fsSL")
       .arg("https://nvidia.github.io/nvidia-docker/gpgkey")
@@ -160,15 +175,15 @@ impl InstallNvidiaDocker {
     if !output.status.success() {
       return Err(fail(format!("`apt-key` failed with exit status: {:?}", output.status.code())));
     }
-    let debian_version = match system.distro_info.codename {
-      Some(DistroCodenameV0::DebianWheezy) => {
+    let debian_version = match distro_info.codename {
+      Some(DebianWheezy) => {
         return Err(fail("wheezy not supported by nvidia-docker"));
       }
-      Some(DistroCodenameV0::DebianBuster) => {
+      Some(DebianBuster) => {
         return Err(fail("buster not supported by nvidia-docker"));
       }
-      Some(DistroCodenameV0::DebianJessie) => "8",
-      Some(DistroCodenameV0::DebianStretch) => "9",
+      Some(DebianJessie) => "8",
+      Some(DebianStretch) => "9",
       _ => panic!("bug"),
     };
     let curl_cmd = Command::new("curl")
@@ -200,15 +215,15 @@ impl InstallNvidiaDocker {
     Ok(())
   }
 
-  fn do_it_ubuntu() -> Maybe {
-    unimplemented!();
+  fn install_ubuntu() -> Maybe {
+    Err(fail("TODO: install nvidia-docker2 on ubuntu"))
   }
 
-  pub fn do_it(system: &SystemSetupV0) -> Maybe {
-    match system.distro_info.id {
-      DistroIdV0::Debian => InstallDocker::do_it_debian(system),
-      DistroIdV0::Ubuntu => InstallDocker::do_it_ubuntu(),
-      _ => unimplemented!(),
+  pub fn install(distro_info: &DistroInfoV0) -> Maybe {
+    match distro_info.id {
+      Debian => NvidiaDocker2::install_debian(distro_info),
+      Ubuntu => NvidiaDocker2::install_ubuntu(),
+      _ => Err(fail("install nvidia-docker2: unsupported distro")),
     }
   }
 }

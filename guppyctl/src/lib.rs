@@ -1,6 +1,6 @@
 extern crate curl;
 extern crate minisodium;
-//extern crate schemas;
+extern crate schemas;
 extern crate semver;
 extern crate serde_json;
 extern crate tempfile;
@@ -8,12 +8,13 @@ extern crate tooling;
 
 use curl::easy::{Easy, List};
 use minisodium::{sign_verify};
-//use schemas::wire_protocol::{SystemSetupV0};
+use schemas::wire_protocol::{DistroInfoV0};
 use semver::{Version};
 use serde_json::{Value as JsonValue};
 use tempfile::{NamedTempFile};
+use tooling::deps::{DockerDeps, Docker, NvidiaDocker2};
 use tooling::docker::{GitCheckoutSpec};
-use tooling::query::{Maybe, fail};
+use tooling::query::{Maybe, Query, fail};
 use tooling::state::{ImageManifest, ImageSpec, RootManifest, Sysroot};
 
 use std::fs::{File};
@@ -22,6 +23,19 @@ use std::path::{PathBuf};
 use std::process::{Command};
 
 pub mod cli;
+
+pub fn install_deps() -> Maybe {
+  let distro_info = DistroInfoV0::query()?;
+  DockerDeps::check(&distro_info)?
+    .install_missing()?;
+  if Docker::check(&distro_info)? {
+    Docker::install(&distro_info)?;
+  }
+  if NvidiaDocker2::check(&distro_info)? {
+    NvidiaDocker2::install(&distro_info)?;
+  }
+  Ok(())
+}
 
 pub fn run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
   let sysroot = Sysroot::default();

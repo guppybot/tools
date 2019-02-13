@@ -1,15 +1,14 @@
 use crate::*;
 
 use clap::{App, Arg, ArgMatches, SubCommand};
-use tooling::ipc::{CtlChannel};
-use tooling::state::{ImageManifest, Sysroot};
 
 use std::env::{current_dir};
 use std::fs::{File, create_dir_all};
 use std::io::{Write};
 use std::path::{PathBuf};
+use std::process::{exit};
 
-pub fn dispatch(guppybot_bin: &[u8]) {
+pub fn dispatch(guppybot_bin: &[u8]) -> ! {
   let mut app = App::new("guppyctl")
     .version("beta")
     .subcommand(SubCommand::with_name("run")
@@ -34,12 +33,12 @@ pub fn dispatch(guppybot_bin: &[u8]) {
     )
     /*.subcommand(SubCommand::with_name("x-check-deps")
       .about("Experimental. Check if dependencies are correctly installed")
-    )
+    )*/
     .subcommand(SubCommand::with_name("x-install-deps")
       .about("Experimental. Install dependencies")
-    )*/
+    )
   ;
-  match app.clone().get_matches().subcommand() {
+  let code = match app.clone().get_matches().subcommand() {
     ("run", Some(matches)) => {
       let gup_py_path = PathBuf::from(matches.value_of("FILE")
         .unwrap_or_else(|| "gup.py"));
@@ -48,19 +47,30 @@ pub fn dispatch(guppybot_bin: &[u8]) {
         .map(|s| PathBuf::from(s))
         .or_else(|| current_dir().ok());
       match run(mutable, gup_py_path, working_dir) {
-        Err(e) => panic!("{:?}", e),
-        Ok(_) => {}
+        Err(e) => {
+          eprintln!("{:?}", e);
+          1
+        }
+        Ok(_) => 0,
       }
     }
     /*("x-check-deps", Some(matches)) => {
       unimplemented!();
-    }
-    ("x-install-deps", Some(matches)) => {
-      unimplemented!();
     }*/
+    ("x-install-deps", Some(_matches)) => {
+      match install_deps() {
+        Err(e) => {
+          eprintln!("{:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
     _ => {
       app.print_help().unwrap();
       println!();
+      0
     }
-  }
+  };
+  exit(code)
 }
