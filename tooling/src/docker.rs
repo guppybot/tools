@@ -149,6 +149,16 @@ impl TaskSpec {
   }
 }
 
+pub enum DockerOutput {
+  Stdout,
+  Chan(RegistryChannel),
+}
+
+pub enum DockerRunStatus {
+  Success,
+  Failure,
+}
+
 pub struct DockerImage {
   // TODO
   pub imagespec: ImageSpec,
@@ -157,7 +167,7 @@ pub struct DockerImage {
 }
 
 impl DockerImage {
-  pub fn build(&self) -> Maybe {
+  pub fn _build(&self, fresh: bool) -> Maybe {
     let toolchain_image_dir = self.imagespec.to_toolchain_image_dir();
     let toolchain_template_dir = self.imagespec.to_toolchain_docker_template_dir();
     let distro_toolchain_template_dir = toolchain_template_dir.join(self.imagespec.distro_codename.to_desc_str());
@@ -188,6 +198,14 @@ impl DockerImage {
     let mut cmd = Command::new("docker");
     cmd
       .arg("build")
+    ;
+    if fresh {
+      cmd
+        .arg("--no-cache")
+        .arg("--pull")
+      ;
+    }
+    cmd
       .arg("-t")
       .arg(format!("gup/{}", self.hash_digest))
       .arg(toolchain_image_dir.join(&self.hash_digest))
@@ -196,15 +214,12 @@ impl DockerImage {
     ;
     let mut proc = cmd.spawn()
       .map_err(|_| fail("failed to run `docker build`"))?;
-    println!("### BEGIN MONITOR ###");
-    //let stdout_mon_h = ConsoleMonitor::serialize_to_stdout(proc.stdout.take().unwrap());
-    //let stderr_mon_h = ConsoleMonitor::serialize_to_stdout(proc.stderr.take().unwrap());
-    let mon_h = ConsoleMonitor::serialize_to_stdout(proc.stdout.take().unwrap(), proc.stderr.take().unwrap());
+    //println!("### BEGIN MONITOR ###");
+    let mon_h = ConsoleMonitor::sink(proc.stdout.take().unwrap(), proc.stderr.take().unwrap());
+    // FIXME: check status.
     proc.wait().ok();
-    //stdout_mon_h.join().ok();
-    //stderr_mon_h.join().ok();
     mon_h.join().ok();
-    println!("### END MONITOR ###");
+    //println!("### END MONITOR ###");
     Ok(())
   }
 
@@ -251,7 +266,6 @@ impl DockerImage {
     ;
     let mut proc = cmd.spawn()
       .map_err(|_| fail("failed to run `docker run`"))?;
-    // FIXME: check status.
     let tasks = if let Some(ref mut stdout) = proc.stdout {
       match _taskspecs(stdout) {
         Err(e) => {
@@ -273,11 +287,12 @@ impl DockerImage {
       println!("{}", buf);
       println!("### END STDERR ###");*/
     }
+    // FIXME: check status.
     proc.wait().ok();
     Ok(tasks)
   }
 
-  pub fn run(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, mut chan: Option<RegistryChannel>) -> Maybe {
+  pub fn run(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, mut output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
     let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir();
     // FIXME
     //let distro_toolchain_dir = toolchain_dir.join(self.imagespec.distro_codename.to_desc_str());
@@ -329,20 +344,29 @@ impl DockerImage {
     let mut proc = cmd.spawn()
       .expect("failed to run `docker run`");
     //println!("### BEGIN MONITOR ###");
-    //let mon_h = ConsoleMonitor::serialize_to_stdout(proc.stdout.take().unwrap(), proc.stderr.take().unwrap());
-    let mon_h = ConsoleMonitor::serialize(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), chan.as_mut());
+    let mon_h = match output {
+      None => {
+        ConsoleMonitor::sink(proc.stdout.take().unwrap(), proc.stderr.take().unwrap())
+      }
+      Some(DockerOutput::Stdout) => {
+        ConsoleMonitor::serialize_to_stdout(proc.stdout.take().unwrap(), proc.stderr.take().unwrap())
+      }
+      Some(DockerOutput::Chan(mut chan)) => {
+        ConsoleMonitor::serialize_to_channel(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), Some(&mut chan))
+      }
+    };
     let maybe_status = proc.wait();
     mon_h.join().ok();
     //println!("### END MONITOR ###");
     let status = maybe_status
       .map_err(|_| fail("failed to wait for `docker run`"))?;
-    if !status.success() {
-      return Err(fail(format!("`docker run` failed with exit status: {:?}", status)));
+    match status.success() {
+      false => Ok(DockerRunStatus::Failure),
+      true  => Ok(DockerRunStatus::Success),
     }
-    Ok(())
   }
 
-  pub fn run_mut(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, mut chan: Option<RegistryChannel>) -> Maybe {
+  pub fn run_mut(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, mut output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
     let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir();
     // FIXME
     //let distro_toolchain_dir = toolchain_dir.join(self.imagespec.distro_codename.to_desc_str());
@@ -394,17 +418,26 @@ impl DockerImage {
     let mut proc = cmd.spawn()
       .expect("failed to run `docker run`");
     //println!("### BEGIN MONITOR ###");
-    //let mon_h = ConsoleMonitor::serialize_to_stdout(proc.stdout.take().unwrap(), proc.stderr.take().unwrap());
-    let mon_h = ConsoleMonitor::serialize(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), chan.as_mut());
+    let mon_h = match output {
+      None => {
+        ConsoleMonitor::sink(proc.stdout.take().unwrap(), proc.stderr.take().unwrap())
+      }
+      Some(DockerOutput::Stdout) => {
+        ConsoleMonitor::serialize_to_stdout(proc.stdout.take().unwrap(), proc.stderr.take().unwrap())
+      }
+      Some(DockerOutput::Chan(mut chan)) => {
+        ConsoleMonitor::serialize_to_channel(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), Some(&mut chan))
+      }
+    };
     let maybe_status = proc.wait();
     mon_h.join().ok();
     //println!("### END MONITOR ###");
     let status = maybe_status
       .map_err(|_| fail("failed to wait for `docker run`"))?;
-    if !status.success() {
-      return Err(fail(format!("`docker run` failed with exit status: {:?}", status)));
+    match status.success() {
+      false => Ok(DockerRunStatus::Failure),
+      true  => Ok(DockerRunStatus::Success),
     }
-    Ok(())
   }
 }
 
@@ -668,14 +701,35 @@ struct ConsoleMonitor {
 }
 
 impl ConsoleMonitor {
-  pub fn print_to_stdout<R: Read + Send + 'static>(reader: R) -> thread::JoinHandle<()> {
-    thread::spawn(move || {
-      let buf = BufReader::with_capacity(64, reader);
-      for line in buf.lines() {
-        let line = line.unwrap();
-        println!("{}", line);
-      }
-    })
+  pub fn sink<Stdout, Stderr>(stdout: Stdout, stderr: Stderr) -> MonitorJoin
+  where Stdout: Read + Send + 'static, Stderr: Read + Send + 'static {
+    let (stdout_tx, mon_rx) = bounded(64);
+    let stderr_tx = stdout_tx.clone();
+    let joins = vec![
+      thread::spawn(move || {
+        let buf = BufReader::with_capacity(64, stdout);
+        for line in buf.lines() {
+          let _line = line.unwrap();
+          stdout_tx.send(()).unwrap();
+        }
+      }),
+      thread::spawn(move || {
+        let buf = BufReader::with_capacity(64, stderr);
+        for line in buf.lines() {
+          let _line = line.unwrap();
+          stderr_tx.send(()).unwrap();
+        }
+      }),
+      thread::spawn(move || {
+        loop {
+          match mon_rx.recv() {
+            Err(_) => break,
+            Ok(_) => {}
+          }
+        }
+      }),
+    ];
+    MonitorJoin{joins}
   }
 
   pub fn serialize_to_stdout<Stdout, Stderr>(stdout: Stdout, stderr: Stderr) -> MonitorJoin
@@ -709,7 +763,7 @@ impl ConsoleMonitor {
     MonitorJoin{joins}
   }
 
-  pub fn serialize<Stdout, Stderr>(stdout: Stdout, stderr: Stderr, chan: Option<&mut RegistryChannel>) -> MonitorJoin
+  pub fn serialize_to_channel<Stdout, Stderr>(stdout: Stdout, stderr: Stderr, chan: Option<&mut RegistryChannel>) -> MonitorJoin
   where Stdout: Read + Send + 'static, Stderr: Read + Send + 'static {
     let (stdout_tx, mon_rx) = bounded(64);
     let stderr_tx = stdout_tx.clone();
@@ -730,10 +784,12 @@ impl ConsoleMonitor {
       }),
       thread::spawn(move || {
         loop {
-          // FIXME
           match mon_rx.recv() {
             Err(_) => break,
-            Ok(line) => println!("{}", line),
+            Ok(line) => {
+              // FIXME
+              println!("{}", line);
+            }
           }
         }
       }),

@@ -14,7 +14,7 @@ use serde_json::{Value as JsonValue};
 use tempfile::{NamedTempFile};
 use tooling::config::{Config, ApiConfig, MachineConfig, CiConfig};
 use tooling::deps::{DockerDeps, Docker, NvidiaDocker2};
-use tooling::docker::{GitCheckoutSpec};
+use tooling::docker::{GitCheckoutSpec, DockerRunStatus};
 use tooling::query::{Maybe, Query, fail};
 use tooling::state::{ImageManifest, ImageSpec, RootManifest, Sysroot};
 
@@ -74,7 +74,7 @@ pub fn print_config() -> Maybe {
 /*pub fn reload_config() -> Maybe {
 }*/
 
-pub fn run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
+fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
   let sysroot = Sysroot::default();
 
   let root_manifest = RootManifest::load(&sysroot)
@@ -94,21 +94,43 @@ pub fn run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) ->
   assert!(gup_py_path.is_absolute());
   let tasks = builtin_image._run_taskspec_direct(&gup_py_path, &sysroot)?;
   let num_tasks = tasks.len();
+  match num_tasks {
+    0 => {}
+    1 => println!("Running 1 task..."),
+    _ => println!("Running {} tasks...", num_tasks),
+  }
   for (task_idx, task) in tasks.iter().enumerate() {
     let image = match task.image_candidate() {
       None => {
         eprintln!("TRACE: task {}/{}: no image candidate", task_idx + 1, num_tasks);
-        continue;
+        return Ok(DockerRunStatus::Failure);
       }
       Some(im) => im,
     };
     //eprintln!("TRACE: task {}/{}: image: {:?}", task_idx + 1, num_tasks, image);
     let docker_image = image_manifest.lookup_docker_image(&image, &sysroot, &root_manifest)?;
-    match mutable {
-      false => docker_image.run(&checkout, task, None)?,
-      true  => docker_image.run_mut(&checkout, task, None)?,
+    let status = match mutable {
+      false => docker_image.run(&checkout, task, None),
+      true  => docker_image.run_mut(&checkout, task, None),
+    }?;
+    if let DockerRunStatus::Failure = status {
+      // FIXME: report on the task that failed.
+      return Ok(status);
     }
   }
 
-  Ok(())
+  Ok(DockerRunStatus::Success)
+}
+
+pub fn run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
+  match _run(mutable, gup_py_path, working_dir)? {
+    DockerRunStatus::Success => {
+      println!("All tasks ran successfully.");
+      Ok(())
+    }
+    DockerRunStatus::Failure => {
+      println!("Some tasks ran unsuccessfully.");
+      Err(fail("Some tasks ran unsuccessfully"))
+    }
+  }
 }

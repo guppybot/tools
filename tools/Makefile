@@ -16,4 +16,4 @@ guppyctl: deps guppybot
 
 clean:
 	cargo clean
-	rm Cargo.lock guppybot guppyctl
+	rm -f Cargo.lock guppybot guppyctl

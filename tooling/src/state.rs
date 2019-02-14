@@ -427,7 +427,7 @@ impl ImageManifest {
       imagespec: lookup_image.clone(),
       hash_digest: lookup_image.to_hash_digest(root_manifest),
     };
-    new_docker_image.build()?;
+    new_docker_image._build(false)?;
     self.imagespecs.push(lookup_image.clone());
     self.dump(sysroot, root_manifest)?;
     Ok(new_docker_image)
