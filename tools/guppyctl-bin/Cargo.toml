@@ -3,8 +3,10 @@ name = "guppyctl-bin"
 version = "0.0.0"
 edition = "2018"
 authors = ["Peter Jin <peter@guppybot.org>"]
+workspace = ".."
 
 [dependencies]
+guppybot-bin = { path = "../guppybot-bin" }
 guppyctl = { path = "../../guppyctl" }
 
 [[bin]]

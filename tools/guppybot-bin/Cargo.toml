@@ -2,6 +2,8 @@
 name = "guppybot-bin"
 version = "0.0.0"
 edition = "2018"
+authors = ["Peter Jin <peter@guppybot.org>"]
+workspace = ".."
 
 [[bin]]
 name = "guppybot"

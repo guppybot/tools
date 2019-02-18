@@ -4,9 +4,13 @@ use self::config_toml::{
   CiConfig as CiToml,
 };
 
-use crate::query::{Maybe, fail};
+use crate::query::{Maybe, Query, fail};
 
-use schemas::wire_protocol::{GpusV0};
+use schemas::wire_protocol::{
+  GpusV0,
+  MachineConfigV0, LocalMachineV0, LocalDeviceV0,
+  CiConfigV0, CiRepoV0, CiEventPolicyV0, UserHandleV0, UserDomainV0,
+};
 use url::{Url};
 
 use std::fs::{File, create_dir_all};
@@ -23,7 +27,7 @@ mod config_toml {
 
   #[derive(Debug, Default, Deserialize)]
   pub struct ApiAuth {
-    pub api_key: Option<String>,
+    pub api_id: Option<String>,
     pub secret_token: Option<String>,
   }
 
@@ -123,7 +127,7 @@ mod config_toml {
 
 #[derive(Debug)]
 pub struct ApiAuth {
-  pub api_key: String,
+  pub api_id: String,
   pub secret_token: String,
 }
 
@@ -142,7 +146,7 @@ impl ApiConfig {
     let api = ApiToml::open(path)?;
     let auth = api.auth.unwrap_or_default();
     let auth = ApiAuth{
-      api_key: auth.api_key.ok_or_else(|| fail("api config: auth: missing api_key"))?,
+      api_id: auth.api_id.ok_or_else(|| fail("api config: auth: missing api_id"))?,
       secret_token: auth.secret_token.ok_or_else(|| fail("api config: auth: missing secret_token"))?,
     };
     Ok(ApiConfig{
@@ -151,131 +155,75 @@ impl ApiConfig {
   }
 }
 
-#[derive(Debug)]
-pub enum Device {
-  PciSlot(String),
-  //Uuid(String),
-}
-
-#[derive(Debug)]
-pub struct LocalMachine {
-  pub gpus: Vec<Device>,
-}
-
-#[derive(Debug)]
-pub struct MachineConfig {
-  pub local_machine: LocalMachine,
-}
-
-impl MachineConfig {
-  pub fn open_default() -> Maybe<MachineConfig> {
-    let default_path = PathBuf::from("/etc/guppybot/machine");
-    MachineConfig::open(&default_path)
-  }
-
-  pub fn open(path: &Path) -> Maybe<MachineConfig> {
-    let cfg = MachineToml::open(path)?;
+impl Query for MachineConfigV0 {
+  fn query() -> Maybe<MachineConfigV0> {
+    let cfg = MachineToml::open(&PathBuf::from("/etc/guppybot/machine"))?;
     let local_machine = cfg.local_machine.unwrap_or_default();
-    let local_machine = LocalMachine{
+    let local_machine = LocalMachineV0{
       gpus: local_machine.gpus.unwrap_or_default()
-        .iter().map(|dev_str| Device::PciSlot(dev_str.to_string()))
+        .iter().map(|dev_str| LocalDeviceV0::PciSlot(dev_str.to_string()))
         .collect(),
     };
-    Ok(MachineConfig{
+    Ok(MachineConfigV0{
       local_machine,
     })
   }
 }
 
-#[derive(Debug)]
-pub enum UserDomain {
-  GuppybotOrg,
-  GithubCom,
-}
-
-#[derive(Debug)]
-pub struct UserHandle {
-  pub username: String,
-  pub domain: UserDomain,
-}
-
-#[derive(Debug)]
-pub enum CiEventPolicy {
-  Nobody,
-  AllowedUsers,
-  EverybodyExceptCiChanges,
-  Everybody,
-}
-
-#[derive(Debug)]
-pub struct CiRepo {
-  pub remote_url: Url,
-  pub commit_policy: CiEventPolicy,
-  pub pr_policy: CiEventPolicy,
-  pub allowed_users: Vec<UserHandle>,
-}
-
-#[derive(Debug)]
-pub struct CiConfig {
-  pub repos: Vec<CiRepo>,
-}
-
-impl CiConfig {
-  pub fn open_default() -> Maybe<CiConfig> {
-    let default_path = PathBuf::from("/etc/guppybot/ci");
-    CiConfig::open(&default_path)
-  }
-
-  pub fn open(path: &Path) -> Maybe<CiConfig> {
-    let cfg = CiToml::open(path)?;
+impl Query for CiConfigV0 {
+  fn query() -> Maybe<CiConfigV0> {
+    let cfg = CiToml::open(&PathBuf::from("/etc/guppybot/ci"))?;
     let mut repos = Vec::new();
     for repo in cfg.repos.unwrap_or_default().iter() {
-      let remote_url = Url::parse(repo.remote_url.as_ref()
-          .ok_or_else(|| fail("repo: missing remote url"))?)
-        .map_err(|_| fail("failed to parse remote url"))?;
+      let remote_url = Url::parse(
+          repo.remote_url.as_ref()
+            .ok_or_else(|| fail("ci repo: missing remote url"))?
+      )
+        .map_err(|_| fail("ci repo: error parsing remote url"))?
+        .into_string();
       let commit_policy = match repo.commit_policy.as_ref().map(|s| s.as_str()) {
-        Some("nobody") => Ok(CiEventPolicy::Nobody),
-        Some("allowed_users") => Ok(CiEventPolicy::AllowedUsers),
-        Some("everybody_except_ci_changes") => Ok(CiEventPolicy::EverybodyExceptCiChanges),
-        Some("everybody") => Ok(CiEventPolicy::Everybody),
-        _ => Err(fail("failed to parse commit event policy")),
+        Some("nobody") => Ok(CiEventPolicyV0::Nobody),
+        Some("allowed_users") => Ok(CiEventPolicyV0::AllowedUsers),
+        Some("everybody_except_ci_changes") => Ok(CiEventPolicyV0::EverybodyExceptCiChanges),
+        Some("everybody") => Ok(CiEventPolicyV0::Everybody),
+        _ => Err(fail("ci repo: error parsing commit event policy")),
       }?;
       let pr_policy = match repo.pr_policy.as_ref().map(|s| s.as_str()) {
-        Some("nobody") => Ok(CiEventPolicy::Nobody),
-        Some("allowed_users") => Ok(CiEventPolicy::AllowedUsers),
-        Some("everybody_except_ci_changes") => Ok(CiEventPolicy::EverybodyExceptCiChanges),
-        Some("everybody") => Ok(CiEventPolicy::Everybody),
-        _ => Err(fail("failed to parse pr event policy")),
+        Some("nobody") => Ok(CiEventPolicyV0::Nobody),
+        Some("allowed_users") => Ok(CiEventPolicyV0::AllowedUsers),
+        Some("everybody_except_ci_changes") => Ok(CiEventPolicyV0::EverybodyExceptCiChanges),
+        Some("everybody") => Ok(CiEventPolicyV0::Everybody),
+        _ => Err(fail("ci repo: error parsing pr event policy")),
       }?;
       let empty = Vec::new();
       let mut allowed_users = Vec::new();
       for user_str in repo.allowed_users.as_ref().unwrap_or_else(|| &empty).iter() {
         let user_toks: Vec<_> = user_str.splitn(2, ":").collect();
         allowed_users.push(match user_toks.len() {
-          0 => return Err(fail("repo: invalid user format")),
-          1 => UserHandle{
+          0 => return Err(fail("ci repo: invalid user format")),
+          1 => UserHandleV0{
             username: user_toks[0].to_string(),
-            domain: UserDomain::GuppybotOrg,
+            domain: UserDomainV0::GuppybotOrg,
           },
-          2 => UserHandle{
+          2 => UserHandleV0{
             username: user_toks[0].to_string(),
             domain: match user_toks[1] {
-              "guppybot.org" => Ok(UserDomain::GuppybotOrg),
-              "github.com" => Ok(UserDomain::GithubCom),
-              _ => Err(fail("repo: currently unsupported user domain")),
+              "guppybot.org" => Ok(UserDomainV0::GuppybotOrg),
+              "github.com" => Ok(UserDomainV0::GithubCom),
+              _ => Err(fail("ci repo: currently unsupported user domain")),
             }?,
           },
           _ => unreachable!(),
         });
       }
-      repos.push(CiRepo{
+      repos.push(CiRepoV0{
         remote_url,
         commit_policy,
         pr_policy,
         allowed_users,
       });
     }
-    Ok(CiConfig{
+    Ok(CiConfigV0{
       repos,
     })
   }
@@ -310,7 +258,7 @@ impl Config {
             .map_err(|_| fail("failed to write to api config file"))?;
           writeln!(&mut api_writer, "[auth]")
             .map_err(|_| fail("failed to write to api config file"))?;
-          writeln!(&mut api_writer, "api_key = \"YOUR_API_KEY\"")
+          writeln!(&mut api_writer, "api_id = \"YOUR_API_ID\"")
             .map_err(|_| fail("failed to write to api config file"))?;
           writeln!(&mut api_writer, "secret_token = \"YOUR_SECRET_TOKEN\"")
             .map_err(|_| fail("failed to write to api config file"))?;

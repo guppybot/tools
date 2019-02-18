@@ -13,17 +13,17 @@ fn main() {
   let sysroot_dir = manifest_dir.join("..").join("sysroot")
     .canonicalize().unwrap();
   eprintln!("TRACE: sysroot dir (guess): {:?}", sysroot_dir);
-  let assets_dir = manifest_dir.join("..").join("build_assets")
+  let build_dir = manifest_dir.join("..").join("build")
     .canonicalize().unwrap();
-  eprintln!("TRACE: assets dir (guess): {:?}", assets_dir);
-  fs::remove_file(assets_dir.join("sysroot.tar.gz")).ok();
+  eprintln!("TRACE: build dir (guess): {:?}", build_dir);
+  fs::remove_file(build_dir.join("sysroot.tar.gz")).ok();
   let out = Command::new("tar")
     .current_dir(&sysroot_dir)
     .arg("--numeric-owner")
     .arg("--owner=0")
     .arg("--group=0")
     .arg("-czf")
-    .arg(assets_dir.join("sysroot.tar.gz"))
+    .arg(build_dir.join("sysroot.tar.gz"))
     .arg(".")
     .output().unwrap();
   if !out.status.success() {

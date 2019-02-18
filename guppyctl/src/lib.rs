@@ -5,18 +5,21 @@ extern crate semver;
 extern crate serde_json;
 extern crate tempfile;
 extern crate tooling;
+extern crate url;
 
 use curl::easy::{Easy, List};
 use minisodium::{sign_verify};
-use schemas::wire_protocol::{DistroInfoV0, GpusV0};
+use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0, CiConfigV0};
 use semver::{Version};
 use serde_json::{Value as JsonValue};
 use tempfile::{NamedTempFile};
-use tooling::config::{Config, ApiConfig, MachineConfig, CiConfig};
+use tooling::config::{Config, ApiConfig};
 use tooling::deps::{DockerDeps, Docker, NvidiaDocker2};
 use tooling::docker::{GitCheckoutSpec, DockerRunStatus};
+use tooling::ipc::*;
 use tooling::query::{Maybe, Query, fail};
 use tooling::state::{ImageManifest, ImageSpec, RootManifest, Sysroot};
+use url::{Url};
 
 use std::fs::{File};
 use std::io::{Write, stdin, stdout};
@@ -63,11 +66,68 @@ pub fn install_self(alt_sysroot_path: Option<PathBuf>, _guppybot_bin: &[u8]) -> 
 
 pub fn print_config() -> Maybe {
   let api_cfg = ApiConfig::open_default().ok();
-  let machine_cfg = MachineConfig::open_default().ok();
-  let ci_cfg = CiConfig::open_default().ok();
+  let machine_cfg = MachineConfigV0::query().ok();
+  let ci_cfg = CiConfigV0::query().ok();
   println!("API config: {:?}", api_cfg);
   println!("Machine config: {:?}", machine_cfg);
   println!("CI config: {:?}", ci_cfg);
+  Ok(())
+}
+
+pub fn register_ci_machine() -> Maybe {
+  // TODO
+  Ok(())
+}
+
+pub fn register_ci_repo(repo_url: Option<&str>) -> Maybe {
+  if repo_url.is_none() {
+    return Err(fail("missing repo URL"));
+  }
+  let repo_url = repo_url.unwrap().to_string();
+  let mut chan = CtlChannel::open_default()?;
+  let send_msg = Ctl2Bot::RegisterCiRepo{repo_url};
+  chan.send(&send_msg)?;
+  let recv_msg: Bot2Ctl = chan.recv()?;
+  let res = match recv_msg {
+    Bot2Ctl::RegisterCiRepo(res) => res,
+    _ => return Err(fail("IPC protocol error")),
+  };
+  if res.is_none() {
+    return Err(fail("failed to register CI repo"));
+  }
+  let res = res.unwrap();
+  println!("Almost done! There is one remaining manual configuration step.");
+  println!("");
+  println!("guppybot.org has prepared the following webhook configuration for the");
+  println!("repository:");
+  println!("");
+  //println!("    Payload URL:  https://guppybot.org/x/github/longshot");
+  println!("    Payload URL:  {}", res.webhook_payload_url);
+  println!("    Content type: application/json");
+  println!("    Secret:       {}", res.webhook_secret);
+  println!("    Events:       Send me everything (optional)");
+  println!("");
+  println!("Please add a webhook with the above configuration in your repository");
+  println!("settings, probably at the following URL:");
+  println!("");
+  //println!("    https://github.com/asdf/qwerty/settings/hooks");
+  println!("    {}", res.webhook_settings_url);
+  println!("");
+  Ok(())
+}
+
+pub fn register_machine() -> Maybe {
+  let mut chan = CtlChannel::open_default()?;
+  let send_msg = Ctl2Bot::RegisterMachine;
+  chan.send(&send_msg)?;
+  let recv_msg: Bot2Ctl = chan.recv()?;
+  let res = match recv_msg {
+    Bot2Ctl::RegisterMachine(res) => res,
+    _ => return Err(fail("IPC protocol error")),
+  };
+  if res.is_none() {
+    // TODO
+  }
   Ok(())
 }
 

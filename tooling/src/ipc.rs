@@ -8,6 +8,30 @@ use std::io::{Read, Write, Cursor};
 use std::os::unix::net::{UnixDatagram, UnixListener, UnixStream};
 use std::path::{PathBuf};
 
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Ctl2Bot {
+  RegisterCiRepo{
+    repo_url: String,
+  },
+  RegisterMachine,
+  ReloadConfig,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Bot2Ctl {
+  RegisterCiRepo(Option<RegisterCiRepoResponse>),
+  RegisterMachine(Option<()>),
+  ReloadConfig(Option<()>),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterCiRepoResponse {
+  pub repo_url: String,
+  pub webhook_payload_url: String,
+  pub webhook_secret: String,
+  pub webhook_settings_url: String,
+}
+
 pub struct CtlListener {
   buf: Vec<u8>,
   inner: UnixListener,
@@ -16,7 +40,7 @@ pub struct CtlListener {
 impl CtlListener {
   //pub fn open(socket_path: &PathBuf) -> Maybe<CommChannel> {
   pub fn open_default() -> Maybe<CtlListener> {
-    let socket_path = PathBuf::from("/var/lib/guppybot/.sock");
+    let socket_path = PathBuf::from("/var/run/guppybot.sock");
     let mut buf = Vec::with_capacity(4096);
     for _ in 0 .. 4096 {
       buf.push(0);
@@ -57,7 +81,7 @@ impl CtlChannel {
       buf.push(0);
     }
     let inner = UnixStream::connect(&socket_path)
-      .map_err(|_| fail("failed to connect to unix socket"))?;
+      .map_err(|_| fail("Unable to connect to the guppybot daemon"))?;
     Ok(CtlChannel{buf, inner})
   }
 

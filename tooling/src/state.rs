@@ -91,7 +91,7 @@ impl ImageSpec {
   pub fn to_hash(&self, root_manifest: &RootManifest) -> CryptoBuf {
     let desc = self.to_desc();
     let mut hash_buf = CryptoBuf::zero_bytes(32);
-    generic_hash(&mut hash_buf, desc.as_bytes(), &root_manifest.root_key_buf).unwrap();
+    generic_hash(hash_buf.as_mut(), desc.as_bytes(), root_manifest.root_key_buf.as_ref()).unwrap();
     hash_buf
   }
 
@@ -461,7 +461,7 @@ impl RootManifest {
       .map_err(|_| fail("failed to create root manifest"))?;
     manifest_file.set_permissions(Permissions::from_mode(0o600))
       .map_err(|_| fail("failed to set permissions on root manifest"))?;
-    manifest_file.write_all(&root_key_buf)
+    manifest_file.write_all(root_key_buf.as_ref())
       .map_err(|_| fail("failed to write root manifest"))?;
     Ok(RootManifest{root_key_buf})
   }
