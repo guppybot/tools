@@ -3,7 +3,7 @@ use crate::state::{ImageSpec, Toolchain, Sysroot, RegistryChannel};
 
 //use chrono::prelude::*;
 use crossbeam_channel::{bounded};
-use schemas::wire_protocol::{
+use schemas::v1::{
   CudaToolkitVersionV0,
   DistroIdV0,
   DistroCodenameV0,

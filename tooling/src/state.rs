@@ -5,7 +5,7 @@ use crate::query::{Maybe, fail};
 
 use minisodium::{generic_hash};
 use minisodium::util::{CryptoBuf};
-use schemas::wire_protocol::{
+use schemas::v1::{
   CudaToolkitVersionV0::{self, *},
   DistroIdV0::{self, *},
   DistroCodenameV0::{self, *},

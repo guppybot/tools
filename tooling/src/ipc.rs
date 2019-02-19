@@ -1,6 +1,7 @@
 use crate::query::{Maybe, fail};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, NativeEndian};
+use schemas::v1::{MachineConfigV0};
 use serde::{Deserialize, Serialize};
 
 use std::fs;
@@ -10,30 +11,84 @@ use std::path::{PathBuf};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Ctl2Bot {
+  _QueryApiAuth,
+  EchoApiId,
+  EchoMachineId,
+  PrintConfig,
+  RegisterCiMachine{
+    repo_url: String,
+  },
   RegisterCiRepo{
     repo_url: String,
   },
   RegisterMachine,
   ReloadConfig,
+  UnregisterCiMachine,
+  UnregisterCiRepo,
+  UnregisterMachine,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Bot2Ctl {
-  RegisterCiRepo(Option<RegisterCiRepoResponse>),
-  RegisterMachine(Option<()>),
-  ReloadConfig(Option<()>),
+  _QueryApiAuth(Option<QueryApiAuth>),
+  EchoApiId(Option<EchoApiId>),
+  EchoMachineId(Option<EchoMachineId>),
+  PrintConfig(Option<PrintConfig>),
+  RegisterCiMachine(Option<RegisterCiMachine>),
+  RegisterCiRepo(Option<RegisterCiRepo>),
+  RegisterMachine(Option<RegisterMachine>),
+  ReloadConfig(Option<ReloadConfig>),
+  UnregisterCiMachine(Option<()>),
+  UnregisterCiRepo(Option<()>),
+  UnregisterMachine(Option<()>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RegisterCiRepoResponse {
+pub struct QueryApiAuth {
+  pub api_id: Option<String>,
+  pub secret_token: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EchoApiId {
+  pub api_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EchoMachineId {
+  pub machine_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PrintConfig {
+  //pub api_id: String,
+  pub machine_cfg: MachineConfigV0,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterCiMachine {
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterCiRepo {
   pub repo_url: String,
   pub webhook_payload_url: String,
   pub webhook_secret: String,
   pub webhook_settings_url: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterMachine {
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ReloadConfig {
+  pub api_id: String,
+  //pub secret_token: String,
+  pub machine_cfg: MachineConfigV0,
+}
+
 pub struct CtlListener {
-  buf: Vec<u8>,
   inner: UnixListener,
 }
 
@@ -41,22 +96,18 @@ impl CtlListener {
   //pub fn open(socket_path: &PathBuf) -> Maybe<CommChannel> {
   pub fn open_default() -> Maybe<CtlListener> {
     let socket_path = PathBuf::from("/var/run/guppybot.sock");
-    let mut buf = Vec::with_capacity(4096);
-    for _ in 0 .. 4096 {
-      buf.push(0);
-    }
     let inner = UnixListener::bind(&socket_path)
       .or_else(|_| {
         fs::remove_file(&socket_path).ok();
         UnixListener::bind(&socket_path)
       })
-      .map_err(|_| fail("failed to connect to unix socket"))?;
-    Ok(CtlListener{buf, inner})
+      .map_err(|_| fail("Unable to serve the guppybot daemon"))?;
+    Ok(CtlListener{inner})
   }
 
   pub fn accept(&self) -> Maybe<CtlChannel> {
     let (stream, _) = match self.inner.accept() {
-      Err(_) => return Err(fail("unix socket: failed to accept connection")),
+      Err(_) => return Err(fail("Unable to accept connections to the guppybot daemon")),
       Ok(stream) => stream,
     };
     let mut buf = Vec::with_capacity(4096);
@@ -75,7 +126,7 @@ pub struct CtlChannel {
 
 impl CtlChannel {
   pub fn open_default() -> Maybe<CtlChannel> {
-    let socket_path = PathBuf::from("/var/lib/guppybot/.sock");
+    let socket_path = PathBuf::from("/var/run/guppybot.sock");
     let mut buf = Vec::with_capacity(4096);
     for _ in 0 .. 4096 {
       buf.push(0);

@@ -5,6 +5,9 @@ edition = "2018"
 authors = ["Peter Jin <peter@guppybot.org>"]
 workspace = ".."
 
+[dependencies]
+guppybot = { path = "../../guppybot" }
+
 [[bin]]
 name = "guppybot"
 path = "main.rs"

@@ -6,7 +6,7 @@ use self::config_toml::{
 
 use crate::query::{Maybe, Query, fail};
 
-use schemas::wire_protocol::{
+use schemas::v1::{
   GpusV0,
   MachineConfigV0, LocalMachineV0, LocalDeviceV0,
   CiConfigV0, CiRepoV0, CiEventPolicyV0, UserHandleV0, UserDomainV0,

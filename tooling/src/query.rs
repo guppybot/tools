@@ -1,4 +1,4 @@
-use schemas::wire_protocol::*;
+use schemas::v1::*;
 
 use std::fmt::{Debug};
 use std::ffi::{OsStr};

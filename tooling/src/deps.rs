@@ -1,6 +1,6 @@
 use crate::query::{Maybe, fail};
 
-use schemas::wire_protocol::{
+use schemas::v1::{
   DistroIdV0::*,
   DistroCodenameV0::*,
   DistroInfoV0,
