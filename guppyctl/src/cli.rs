@@ -147,6 +147,15 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
+    ("reload-config", Some(matches)) => {
+      match reload_config() {
+        Err(e) => {
+          eprintln!("reload-config: {:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
     ("run", Some(matches)) => {
       let gup_py_path = PathBuf::from(matches.value_of("FILE")
         .unwrap_or_else(|| "gup.py"));
@@ -161,6 +170,18 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         }
         Ok(_) => 0,
       }
+    }
+    ("unregister-ci-machine", Some(matches)) => {
+      // TODO
+      unimplemented!();
+    }
+    ("unregister-ci-repo", Some(matches)) => {
+      // TODO
+      unimplemented!();
+    }
+    ("unregister-machine", Some(matches)) => {
+      // TODO
+      unimplemented!();
     }
     /*("x-check-deps", Some(matches)) => {
       unimplemented!();
@@ -335,8 +356,10 @@ pub fn register_machine() -> Maybe {
   Ok(())
 }
 
-/*pub fn reload_config() -> Maybe {
-}*/
+pub fn reload_config() -> Maybe {
+  // TODO
+  Ok(())
+}
 
 fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
   let sysroot = Sysroot::default();
@@ -363,15 +386,19 @@ fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Ma
     1 => println!("Running 1 task..."),
     _ => println!("Running {} tasks...", num_tasks),
   }
+  stdout().flush().unwrap();
   for (task_idx, task) in tasks.iter().enumerate() {
+    // FIXME: sanitize the task name.
+    print!("Running task {}/{} ({})...", task_idx + 1, num_tasks, task.name);
+    stdout().flush().unwrap();
     let image = match task.image_candidate() {
       None => {
-        eprintln!("TRACE: task {}/{}: no image candidate", task_idx + 1, num_tasks);
+        println!(" NOT STARTED: No matching image candidate.");
+        stdout().flush().unwrap();
         return Ok(DockerRunStatus::Failure);
       }
       Some(im) => im,
     };
-    //eprintln!("TRACE: task {}/{}: image: {:?}", task_idx + 1, num_tasks, image);
     let docker_image = image_manifest.lookup_docker_image(&image, &sysroot, &root_manifest)?;
     let status = match mutable {
       false => docker_image.run(&checkout, task, None),
@@ -379,8 +406,12 @@ fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Ma
     }?;
     if let DockerRunStatus::Failure = status {
       // FIXME: report on the task that failed.
+      println!(" FAILED!");
+      stdout().flush().unwrap();
       return Ok(status);
     }
+    println!(" done.");
+    stdout().flush().unwrap();
   }
 
   Ok(DockerRunStatus::Success)
@@ -393,8 +424,8 @@ pub fn run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) ->
       Ok(())
     }
     DockerRunStatus::Failure => {
-      println!("Some tasks ran unsuccessfully.");
-      Err(fail("Some tasks ran unsuccessfully"))
+      println!("Some tasks failed.");
+      Err(fail("Some tasks failed"))
     }
   }
 }
