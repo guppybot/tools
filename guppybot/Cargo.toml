@@ -17,4 +17,4 @@ schemas = { path = "../../schemas" }
 #tempfile = "^3.0"
 tooling = { path = "../tooling" }
 #url = "^1.7"
-ws = { version = "^0.7.9", features = ["ssl"] }
+ws = { version = "^0.8", features = ["ssl"] }
