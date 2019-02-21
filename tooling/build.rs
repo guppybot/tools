@@ -1,12 +1,17 @@
 extern crate walkdir;
 
+use walkdir::{WalkDir};
+
 use std::fs;
 use std::path::{PathBuf};
 use std::process::{Command};
 
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
-  // TODO: walk dir in sysroot.
+  for entry in WalkDir::new("../sysroot") {
+    let entry = entry.unwrap();
+    println!("cargo:rerun-if-changed={}", entry.path().display());
+  }
   let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
     .canonicalize().unwrap();
   eprintln!("TRACE: cargo manifest dir: {:?}", manifest_dir);
