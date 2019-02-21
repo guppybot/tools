@@ -217,6 +217,7 @@ fn _ensure_api_auth() -> Maybe {
     Bot2Ctl::_QueryApiAuth(None) => {}
     _ => return Err(fail("IPC protocol error")),
   };
+  chan.hup();
   let mut new_api_id = None;
   let mut new_secret_token = None;
   if old_api_id.is_none() {
@@ -258,6 +259,7 @@ fn _ensure_api_auth() -> Maybe {
     }
     _ => return Err(fail("IPC protocol error")),
   }
+  chan.hup();
   Ok(())
 }
 
@@ -320,6 +322,7 @@ pub fn register_ci_machine(repo_url: Option<&str>) -> Maybe {
     Bot2Ctl::RegisterCiMachine(res) => res,
     _ => return Err(fail("IPC protocol error")),
   };
+  chan.hup();
   if res.is_none() {
     return Err(fail("failed to register machine with CI repo"));
   }
@@ -339,6 +342,7 @@ pub fn register_ci_repo(repo_url: Option<&str>) -> Maybe {
     Bot2Ctl::RegisterCiRepo(res) => res,
     _ => return Err(fail("IPC protocol error")),
   };
+  chan.hup();
   if res.is_none() {
     return Err(fail("failed to register CI repo"));
   }
@@ -371,6 +375,7 @@ pub fn register_machine() -> Maybe {
     Bot2Ctl::RegisterMachine(res) => res,
     _ => return Err(fail("IPC protocol error")),
   };
+  chan.hup();
   if res.is_none() {
     // TODO
   }

@@ -18,55 +18,6 @@ impl Context {
   }
 }
 
-pub struct RemoteConn {
-}
-
-impl RemoteConn {
-  pub fn new(server: ws::Sender) -> RemoteConn {
-    // TODO
-    RemoteConn{}
-  }
-}
-
-impl ws::Handler for RemoteConn {
-  fn on_shutdown(&mut self) {
-    // TODO
-    eprintln!("TRACE: RemoteConn: on_shutdown");
-  }
-
-  fn on_open(&mut self, _: ws::Handshake) -> ws::Result<()> {
-    // TODO
-    Ok(())
-  }
-
-  fn on_message(&mut self, _: ws::Message) -> ws::Result<()> {
-    // TODO
-    Ok(())
-  }
-
-  fn on_close(&mut self, _: ws::CloseCode, _: &str) {
-    // TODO
-    eprintln!("TRACE: RemoteConn: on_close");
-  }
-
-  fn on_error(&mut self, _: ws::Error) {
-    // TODO
-    eprintln!("TRACE: RemoteConn: on_error");
-  }
-
-  fn on_timeout(&mut self, _: ws::util::Token) -> ws::Result<()> {
-    // TODO
-    Ok(())
-  }
-}
-
-pub fn connect_ws() -> Maybe {
-  match ws::connect("wss://guppybot.org:443", |server| RemoteConn::new(server)) {
-    Err(_) => Err(fail("Failed to connect to guppybot.org")),
-    Ok(_) => Ok(()),
-  }
-}
-
 pub fn runloop() -> Maybe {
   // TODO: ctrl-c handler.
   let mut local_server = CtlListener::open_default()?;
@@ -139,6 +90,7 @@ pub fn runloop() -> Maybe {
         };
         eprintln!("TRACE:   send: {:?}", send_msg);
         chan.send(&send_msg)?;
+        chan.hup();
         eprintln!("TRACE:   done");
       }
     }

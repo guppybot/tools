@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use std::fs;
 use std::io::{Read, Write, Cursor};
-use std::os::unix::net::{UnixDatagram, UnixListener, UnixStream};
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{PathBuf};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -182,5 +182,8 @@ impl CtlChannel {
       Ok(x) => x,
     };
     Ok(msg)
+  }
+
+  pub fn hup(self) {
   }
 }

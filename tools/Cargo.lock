@@ -198,7 +198,6 @@ dependencies = [
  "minisodium 0.1.0",
  "schemas 0.0.0",
  "tooling 0.0.0",
- "ws 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -766,6 +765,7 @@ dependencies = [
  "toml 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 1.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "walkdir 2.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ws 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

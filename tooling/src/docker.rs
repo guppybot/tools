@@ -1,5 +1,6 @@
 use crate::query::{Maybe, fail};
-use crate::state::{ImageSpec, Toolchain, Sysroot, RegistryChannel};
+use crate::registry::{RegistryChannel};
+use crate::state::{ImageSpec, Toolchain, Sysroot};
 
 //use chrono::prelude::*;
 use crossbeam_channel::{bounded};

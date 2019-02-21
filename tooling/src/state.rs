@@ -501,6 +501,7 @@ impl Sysroot {
     }
     let out = Command::new("tar")
       .current_dir(&self.base_dir)
+      .arg("--no-same-owner")
       .arg("-xzf")
       .arg(self.base_dir.join("sysroot.tar.gz"))
       .output()
@@ -520,29 +521,5 @@ impl Sysroot {
     create_dir_all(&tmp_dir)
       .map_err(|_| fail("failed to create tmp directory in sysroot"))?;
     Ok(tmp_dir)
-  }
-}
-
-pub struct Registry {
-}
-
-impl Registry {
-  pub fn register(auth: &ApiAuth, root_manifest: &RootManifest) -> Maybe<Registry> {
-    //unimplemented!();
-    Ok(Registry{})
-  }
-
-  pub fn channel(&self) -> RegistryChannel {
-    //unimplemented!();
-    RegistryChannel{}
-  }
-}
-
-pub struct RegistryChannel {
-}
-
-impl RegistryChannel {
-  pub fn send_console_msg(&self, msg: &str) {
-    //unimplemented!();
   }
 }

@@ -23,3 +23,4 @@ serde_derive = "^1.0"
 tempfile = "^3.0"
 toml = "^0.4"
 url = "^1.7"
+ws = { version = "^0.8", features = ["ssl"] }
