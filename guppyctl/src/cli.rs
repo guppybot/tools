@@ -204,38 +204,59 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
   exit(code)
 }
 
-fn _ensure_api_auth(mut chan: CtlChannel) -> Maybe {
-  let mut need_api_id = false;
-  let mut need_secret_token = false;
+fn _ensure_api_auth() -> Maybe {
+  let mut old_api_id = None;
+  let mut old_secret_token = None;
+  let mut chan = CtlChannel::open_default()?;
   chan.send(&Ctl2Bot::_QueryApiAuth)?;
   match chan.recv()? {
     Bot2Ctl::_QueryApiAuth(Some(res)) => {
-      need_api_id = res.api_id.is_none();
-      need_secret_token = res.secret_token.is_none();
+      old_api_id = res.api_id;
+      old_secret_token = res.secret_token;
     }
-    Bot2Ctl::_QueryApiAuth(None) => {
-      need_api_id = true;
-      need_secret_token = true;
-    }
+    Bot2Ctl::_QueryApiAuth(None) => {}
     _ => return Err(fail("IPC protocol error")),
   };
-  if need_api_id {
+  let mut new_api_id = None;
+  let mut new_secret_token = None;
+  if old_api_id.is_none() {
     let mut line = String::new();
     print!("API ID: ");
     stdout().flush().unwrap();
     match stdin().read_line(&mut line) {
-      Err(_) => return Err(fail("failed to set authentication details: API ID")),
+      Err(_) => return Err(fail("API authentication requires an API ID")),
       Ok(_) => {}
     }
+    new_api_id = Some(line);
   }
-  if need_secret_token {
+  if old_secret_token.is_none() {
     let mut line = String::new();
     print!("Secret token: ");
     stdout().flush().unwrap();
     match stdin().read_line(&mut line) {
-      Err(_) => return Err(fail("failed to set authentication details: secret token")),
+      Err(_) => return Err(fail("API authentication requires a secret token")),
       Ok(_) => {}
     }
+    new_secret_token = Some(line);
+  }
+  let api_id = old_api_id.or_else(|| new_api_id);
+  if api_id.is_none() {
+    return Err(fail("missing API authentication details: API ID"));
+  }
+  let secret_token = old_secret_token.or_else(|| new_secret_token);
+  if secret_token.is_none() {
+    return Err(fail("missing API authentication details: secret token"));
+  }
+  let api_id = api_id.unwrap();
+  let secret_token = secret_token.unwrap();
+  let mut chan = CtlChannel::open_default()?;
+  chan.send(&Ctl2Bot::_TryApiAuth{api_id, secret_token})?;
+  match chan.recv()? {
+    Bot2Ctl::_TryApiAuth(Some(_)) => {}
+    Bot2Ctl::_TryApiAuth(None) => {
+      return Err(fail("API authentication failed"));
+    }
+    _ => return Err(fail("IPC protocol error")),
   }
   Ok(())
 }
@@ -292,7 +313,7 @@ pub fn register_ci_machine(repo_url: Option<&str>) -> Maybe {
     return Err(fail("missing repository URL"));
   }
   let repo_url = repo_url.unwrap().to_string();
-  _ensure_api_auth(CtlChannel::open_default()?)?;
+  _ensure_api_auth()?;
   let mut chan = CtlChannel::open_default()?;
   chan.send(&Ctl2Bot::RegisterCiMachine{repo_url})?;
   let res = match chan.recv()? {
@@ -311,7 +332,7 @@ pub fn register_ci_repo(repo_url: Option<&str>) -> Maybe {
     return Err(fail("missing repository URL"));
   }
   let repo_url = repo_url.unwrap().to_string();
-  _ensure_api_auth(CtlChannel::open_default()?)?;
+  _ensure_api_auth()?;
   let mut chan = CtlChannel::open_default()?;
   chan.send(&Ctl2Bot::RegisterCiRepo{repo_url})?;
   let res = match chan.recv()? {
@@ -343,7 +364,7 @@ pub fn register_ci_repo(repo_url: Option<&str>) -> Maybe {
 }
 
 pub fn register_machine() -> Maybe {
-  _ensure_api_auth(CtlChannel::open_default()?)?;
+  _ensure_api_auth()?;
   let mut chan = CtlChannel::open_default()?;
   chan.send(&Ctl2Bot::RegisterMachine)?;
   let res = match chan.recv()? {

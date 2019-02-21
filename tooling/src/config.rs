@@ -65,6 +65,7 @@ mod config_toml {
 
   #[derive(Debug, Default, Deserialize)]
   pub struct LocalMachine {
+    pub parallel_tasks: Option<u32>,
     pub gpus: Option<Vec<String>>,
   }
 
@@ -160,6 +161,7 @@ impl Query for MachineConfigV0 {
     let cfg = MachineToml::open(&PathBuf::from("/etc/guppybot/machine"))?;
     let local_machine = cfg.local_machine.unwrap_or_default();
     let local_machine = LocalMachineV0{
+      parallel_tasks: local_machine.parallel_tasks.unwrap_or_else(|| 1),
       gpus: local_machine.gpus.unwrap_or_default()
         .iter().map(|dev_str| LocalDeviceV0::PciSlot(dev_str.to_string()))
         .collect(),

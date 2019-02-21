@@ -12,6 +12,10 @@ use std::path::{PathBuf};
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Ctl2Bot {
   _QueryApiAuth,
+  _TryApiAuth{
+    api_id: String,
+    secret_token: String,
+  },
   EchoApiId,
   EchoMachineId,
   PrintConfig,
@@ -31,6 +35,7 @@ pub enum Ctl2Bot {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Bot2Ctl {
   _QueryApiAuth(Option<QueryApiAuth>),
+  _TryApiAuth(Option<()>),
   EchoApiId(Option<EchoApiId>),
   EchoMachineId(Option<EchoMachineId>),
   PrintConfig(Option<PrintConfig>),
