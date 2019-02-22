@@ -11,12 +11,11 @@ use std::io::{Cursor};
 use std::thread::{JoinHandle, spawn};
 
 pub enum Chan2RawMsg {
-  //SignedBin{sig: Vec<u8>, payload: Vec<u8>},
 }
 
 pub enum Raw2ChanMsg {
   Registry(ws::Sender),
-  SignedBin{bin: Vec<u8>},
+  SignedBin(Vec<u8>),
 }
 
 pub struct RawWsConn {
@@ -49,17 +48,9 @@ impl ws::Handler for RawWsConn {
   }
 
   fn on_message(&mut self, msg: ws::Message) -> ws::Result<()> {
-    // TODO
     if let ws::Message::Binary(bin) = msg {
       // TODO
-      self.raw2chan_s.send(Raw2ChanMsg::SignedBin{bin}).unwrap();
-      select! {
-        recv(self.chan2raw_r) -> _ => {
-          // TODO
-          let mut send_buf: Vec<u8> = vec![];
-          self.registry_s.send(send_buf).unwrap();
-        }
-      }
+      self.raw2chan_s.send(Raw2ChanMsg::SignedBin(bin)).unwrap();
     }
     Ok(())
   }
@@ -134,14 +125,9 @@ impl RegistryChannel {
     assert!(msg_bin_len <= u32::max_value() as usize);
     Cursor::new(&mut bin[32 .. 36])
       .write_u32::<LittleEndian>(msg_bin_len as u32).unwrap();
-    {
-      //let mut sig_buf: Vec<u8> = vec![0; 32];
-      let (sig_buf, payload_buf) = bin.split_at_mut(32);
-      auth_sign(sig_buf, payload_buf, self.secret_token_buf.as_ref())
-        .map_err(|_| fail("API message signing failure"))?;
-      /*self.chan2raw_s.send(Chan2RawMsg::SignedBin{sig: sig_buf, payload: bin})
-        .map_err(|_| fail("internal channel failure"))?;*/
-    }
+    let (sig_buf, payload_buf) = bin.split_at_mut(32);
+    auth_sign(sig_buf, payload_buf, self.secret_token_buf.as_ref())
+      .map_err(|_| fail("API message signing failure"))?;
     self.registry_s.send(bin)
       .map_err(|_| fail("websocket transmission failure"))?;
     Ok(())
@@ -149,7 +135,7 @@ impl RegistryChannel {
 
   pub fn recv<T: DeserializeOwned>(&mut self) -> Maybe<T> {
     match self.raw2chan_r.recv() {
-      Ok(Raw2ChanMsg::SignedBin{bin}) => {
+      Ok(Raw2ChanMsg::SignedBin(bin)) => {
         if bin.len() < 36 {
           return Err(fail("API message protocol failure"));
         }
@@ -161,7 +147,7 @@ impl RegistryChannel {
         let msg_bin_len = Cursor::new(&bin[32 .. 36])
           .read_u32::<LittleEndian>().unwrap() as usize;
         if msg_bin_len != bin[36 .. ].len() {
-          return Err(fail("API message integrity failure"));
+          return Err(fail("API message self-consistency failure"));
         }
         let msg: T = bincode::deserialize_from(Cursor::new(&bin[36 .. ]))
           .map_err(|_| fail("API message deserialization failure"))?;

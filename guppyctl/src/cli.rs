@@ -18,6 +18,7 @@ use std::fs::{File, create_dir_all};
 use std::io::{Write, stdin, stdout};
 use std::path::{PathBuf};
 use std::process::{Command, exit};
+use std::time::{Instant};
 
 pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
   let mut app = App::new("guppyctl")
@@ -388,11 +389,11 @@ pub fn reload_config() -> Maybe {
 }
 
 fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
-  let sysroot = Sysroot::default();
+  let run_start = Instant::now();
 
+  let sysroot = Sysroot::default();
   let root_manifest = RootManifest::load(&sysroot)
     .or_else(|_| RootManifest::fresh(&sysroot))?;
-
   let mut image_manifest = ImageManifest::load(&sysroot, &root_manifest)?;
 
   let checkout = match working_dir {
@@ -415,6 +416,7 @@ fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Ma
   stdout().flush().unwrap();
   for (task_idx, task) in tasks.iter().enumerate() {
     // FIXME: sanitize the task name.
+    let task_start = Instant::now();
     print!("Running task {}/{} ({})...", task_idx + 1, num_tasks, task.name);
     stdout().flush().unwrap();
     let image = match task.image_candidate() {
@@ -431,13 +433,42 @@ fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Ma
       true  => docker_image.run_mut(&checkout, task, None),
     }?;
     if let DockerRunStatus::Failure = status {
+      // FIXME: display task timing.
       // FIXME: report on the task that failed.
+      let task_end = Instant::now();
       println!(" FAILED!");
       stdout().flush().unwrap();
       return Ok(status);
     }
-    println!(" done.");
+    let task_end = Instant::now();
+    let task_dur = task_end - task_start;
+    let task_ms = task_dur.subsec_millis() as u64;
+    let task_s = task_dur.as_secs() + task_ms / 500;
+    let task_m = task_s / 60;
+    let task_h = task_m / 60;
+    if task_h > 0 {
+      println!(" done (elapsed: {}h {:02}m {:02}s).", task_h, task_m % 60, task_s % 60);
+    } else if task_m > 0 {
+      println!(" done (elapsed: {}m {:02}s).", task_m, task_s % 60);
+    } else {
+      println!(" done (elapsed: {}s).", task_s);
+    }
     stdout().flush().unwrap();
+  }
+
+  let run_end = Instant::now();
+  print!("All tasks ran successfully");
+  let run_dur = run_end - run_start;
+  let run_ms = run_dur.subsec_millis() as u64;
+  let run_s = run_dur.as_secs() + run_ms / 500;
+  let run_m = run_s / 60;
+  let run_h = run_m / 60;
+  if run_h > 0 {
+    println!(" (elapsed: {}h {:02}m {:02}s).", run_h, run_m % 60, run_s % 60);
+  } else if run_m > 0 {
+    println!(" (elapsed: {}m {:02}s).", run_m, run_s % 60);
+  } else {
+    println!(" (elapsed: {}s).", run_s);
   }
 
   Ok(DockerRunStatus::Success)
@@ -446,7 +477,6 @@ fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Ma
 pub fn run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
   match _run(mutable, gup_py_path, working_dir)? {
     DockerRunStatus::Success => {
-      println!("All tasks ran successfully.");
       Ok(())
     }
     DockerRunStatus::Failure => {

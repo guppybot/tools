@@ -460,6 +460,8 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
           panic!("must specify a directive version");
         }
         "v0.task" => {
+          // FIXME: use `split_ascii_whitespace` as soon as stabilized:
+          // https://github.com/rust-lang/rust/pull/58047
           let task_toks: Vec<_> = directive_toks[1].split_whitespace().collect();
           match task_toks[0] {
             "begin" => {
@@ -486,8 +488,29 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
               if task_toks.len() <= 1 {
                 return Err(fail("v0.task:name takes 1 argument"));
               }
+              let mut iter_state = 0;
+              let mut iter = directive_toks[1].chars();
+              loop {
+                let c = iter.as_str().chars().next().unwrap();
+                match iter_state {
+                  0 => if c.is_ascii_whitespace() {
+                    iter_state = 1;
+                  },
+                  1 => if !c.is_ascii_whitespace() {
+                    iter_state = 2;
+                    break;
+                  },
+                  _ => unreachable!(),
+                }
+                if iter.next().is_none() {
+                  break;
+                }
+              }
+              if iter_state != 2 {
+                panic!("bug");
+              }
               builder.as_mut().unwrap()
-                .name = task_toks[1].to_string();
+                .name = iter.as_str().to_string();
             }
             "toolchain" => {
               if builder.is_none() {
