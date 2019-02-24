@@ -126,13 +126,13 @@ mod config_toml {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ApiAuth {
   pub api_id: String,
   pub secret_token: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ApiConfig {
   pub auth: ApiAuth,
 }

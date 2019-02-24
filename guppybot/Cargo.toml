@@ -15,5 +15,6 @@ schemas = { path = "../../schemas" }
 #semver = "^0.9"
 #serde_json = "^1.0"
 #tempfile = "^3.0"
+toml = "^0.4"
 tooling = { path = "../tooling" }
 #url = "^1.7"

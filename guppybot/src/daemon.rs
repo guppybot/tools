@@ -1,99 +1,186 @@
-use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0};
-use tooling::config::{ApiConfig};
+use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, Bot2RegistryV0};
+use tooling::config::{ApiConfig, ApiAuth};
 use tooling::ipc::*;
 use tooling::query::{Maybe, Query, fail};
+use tooling::registry::{RegistryChannel};
+
+use std::fs::{File};
+use std::io::{Write};
+use std::path::{PathBuf};
+
+pub fn runloop() -> Maybe {
+  Context::new().runloop()
+}
 
 pub struct Context {
   api_cfg: Option<ApiConfig>,
   machine_cfg: Option<MachineConfigV0>,
+  reg_chan: Option<RegistryChannel>,
 }
 
 impl Context {
   pub fn new() -> Context {
-    // TODO
     let api_cfg = ApiConfig::open_default().ok();
     let machine_cfg = MachineConfigV0::query().ok();
-    //let ci_cfg = CiConfigV0::query().ok();
-    unimplemented!();
+    Context{
+      api_cfg,
+      machine_cfg,
+      reg_chan: None,
+    }
   }
 }
 
-pub fn runloop() -> Maybe {
-  // TODO: ctrl-c handler.
-  let mut local_server = CtlListener::open_default()?;
-  eprintln!("TRACE: guppybot: listening");
-  loop {
-    match local_server.accept() {
-      Err(_) => continue,
-      Ok(mut chan) => {
-        eprintln!("TRACE: guppybot: accept conn");
-        // FIXME: do not bail on send/recv errors.
-        let recv_msg: Ctl2Bot = chan.recv()?;
-        eprintln!("TRACE:   recv: {:?}", recv_msg);
-        let send_msg = match recv_msg {
-          Ctl2Bot::_QueryApiAuth => {
-            // TODO
-            Bot2Ctl::_QueryApiAuth(None)
-          }
-          Ctl2Bot::EchoApiId => {
-            // TODO
-            Bot2Ctl::EchoApiId(None)
-          }
-          Ctl2Bot::EchoMachineId => {
-            // TODO
-            Bot2Ctl::EchoMachineId(None)
-          }
-          Ctl2Bot::PrintConfig => {
-            // TODO
-            Bot2Ctl::PrintConfig(None)
-          }
-          Ctl2Bot::RegisterCiMachine{repo_url} => {
-            // TODO
-            Bot2Ctl::RegisterCiMachine(None)
-          }
-          Ctl2Bot::RegisterCiRepo{repo_url} => {
-            // TODO: now we make a query with the websocket service.
-            let settings_url = format!("{}/settings/hooks", repo_url);
-            Bot2Ctl::RegisterCiRepo(Some(RegisterCiRepo{
-              repo_url,
-              webhook_payload_url: "https://guppybot.org/x/github/longshot".to_string(),
-              webhook_secret: "AAAEEEIIIOOOUUU".to_string(),
-              webhook_settings_url: settings_url,
-            }))
-          }
-          Ctl2Bot::RegisterMachine => {
-            // TODO
-            Bot2Ctl::RegisterMachine(None)
-          }
-          Ctl2Bot::ReloadConfig => {
-            // TODO
-            let api_cfg = ApiConfig::open_default().ok();
-            let machine_cfg = MachineConfigV0::query().ok();
-            Bot2Ctl::ReloadConfig(None)
-          }
-          Ctl2Bot::UnregisterCiMachine => {
-            // TODO
-            Bot2Ctl::UnregisterCiMachine(None)
-          }
-          Ctl2Bot::UnregisterCiRepo => {
-            // TODO
-            Bot2Ctl::UnregisterCiRepo(None)
-          }
-          Ctl2Bot::UnregisterMachine => {
-            // TODO
-            Bot2Ctl::UnregisterMachine(None)
-          }
-          _ => {
-            eprintln!("TRACE:   unhandled msg case, skipping");
-            continue;
-          }
-        };
-        eprintln!("TRACE:   send: {:?}", send_msg);
-        chan.send(&send_msg)?;
-        chan.hup();
-        eprintln!("TRACE:   done");
+impl Context {
+  fn _query_api_auth_config(&mut self) -> Option<()> {
+    // TODO
+    None
+  }
+
+  fn _dump_api_auth_config(&mut self) -> Option<()> {
+    // TODO
+    None
+  }
+
+  fn _retry_api_auth(&mut self) -> Option<()> {
+    if self.api_cfg.is_none() {
+      return None;
+    }
+    let api_cfg = self.api_cfg.as_ref().unwrap();
+    if self.reg_chan.is_none() {
+      // FIXME
+      //let secret_token_buf = _;
+      //self.reg_chan = Some(RegistryChannel::open());
+    }
+    if self.reg_chan.as_mut().unwrap()
+        .send(&Bot2RegistryV0::Auth{
+          api_id: api_cfg.auth.api_id.clone(),
+        }).is_err()
+    {
+      return None;
+    }
+    // TODO
+    None
+  }
+
+  fn _undo_api_auth(&mut self) -> Option<()> {
+    // TODO
+    None
+  }
+
+  fn register_ci_machine(&mut self) -> Option<()> {
+    // TODO
+    None
+  }
+
+  fn register_ci_repo(&mut self) -> Option<()> {
+    // TODO
+    None
+  }
+
+  fn register_machine(&mut self) -> Option<()> {
+    // TODO
+    None
+  }
+
+  pub fn runloop(&mut self) -> Maybe {
+    // TODO: ctrl-c handler.
+    let mut local_server = CtlListener::open_default()?;
+    eprintln!("TRACE: guppybot: listening");
+    loop {
+      match local_server.accept() {
+        Err(_) => continue,
+        Ok(mut chan) => {
+          eprintln!("TRACE: guppybot: accept conn");
+          // FIXME: do not bail on send/recv errors.
+          let recv_msg: Ctl2Bot = chan.recv()?;
+          eprintln!("TRACE:   recv: {:?}", recv_msg);
+          let send_msg = match recv_msg {
+            Ctl2Bot::_QueryApiAuthConfig => {
+              // TODO
+              Bot2Ctl::_QueryApiAuthConfig(None)
+            }
+            Ctl2Bot::_DumpApiAuthConfig{api_id, secret_token} => {
+              // FIXME: get rid of unwraps.
+              let new_api_cfg = ApiConfig{
+                auth: ApiAuth{
+                  api_id,
+                  secret_token,
+                },
+              };
+              let cfg_path = PathBuf::from("/etc/guppybot/api");
+              let mut cfg_file = File::create(&cfg_path).unwrap();
+              writeln!(&mut cfg_file, "# automatically generated by guppybot").unwrap();
+              writeln!(&mut cfg_file, "").unwrap();
+              writeln!(&mut cfg_file, "{}", toml::ser::to_string_pretty(&new_api_cfg).unwrap()).unwrap();
+              Bot2Ctl::_DumpApiAuthConfig(None)
+            }
+            Ctl2Bot::_RetryApiAuth => {
+              Bot2Ctl::_RetryApiAuth(self._retry_api_auth())
+            }
+            Ctl2Bot::_UndoApiAuth => {
+              // TODO
+              Bot2Ctl::_UndoApiAuth(None)
+            }
+            Ctl2Bot::EchoApiId => {
+              // TODO
+              Bot2Ctl::EchoApiId(None)
+            }
+            Ctl2Bot::EchoMachineId => {
+              // TODO
+              Bot2Ctl::EchoMachineId(None)
+            }
+            Ctl2Bot::PrintConfig => {
+              // TODO
+              Bot2Ctl::PrintConfig(None)
+            }
+            Ctl2Bot::RegisterCiMachine{repo_url} => {
+              // TODO
+              Bot2Ctl::RegisterCiMachine(None)
+            }
+            Ctl2Bot::RegisterCiRepo{repo_url} => {
+              // TODO: now we make a query with the websocket service.
+              let settings_url = format!("{}/settings/hooks", repo_url);
+              Bot2Ctl::RegisterCiRepo(Some(RegisterCiRepo{
+                repo_url,
+                webhook_payload_url: "https://guppybot.org/x/github/longshot".to_string(),
+                webhook_secret: "AAAEEEIIIOOOUUU".to_string(),
+                webhook_settings_url: settings_url,
+              }))
+            }
+            Ctl2Bot::RegisterMachine => {
+              // TODO
+              Bot2Ctl::RegisterMachine(None)
+            }
+            Ctl2Bot::ReloadConfig => {
+              // TODO
+              let api_cfg = ApiConfig::open_default().ok();
+              let machine_cfg = MachineConfigV0::query().ok();
+              Bot2Ctl::ReloadConfig(None)
+            }
+            Ctl2Bot::UnregisterCiMachine => {
+              // TODO
+              Bot2Ctl::UnregisterCiMachine(None)
+            }
+            Ctl2Bot::UnregisterCiRepo => {
+              // TODO
+              Bot2Ctl::UnregisterCiRepo(None)
+            }
+            Ctl2Bot::UnregisterMachine => {
+              // TODO
+              Bot2Ctl::UnregisterMachine(None)
+            }
+            _ => {
+              eprintln!("TRACE:   unhandled msg case, skipping");
+              continue;
+            }
+          };
+          eprintln!("TRACE:   send: {:?}", send_msg);
+          chan.send(&send_msg)?;
+          chan.hup();
+          eprintln!("TRACE:   done");
+        }
       }
     }
+    Ok(())
   }
-  Ok(())
 }

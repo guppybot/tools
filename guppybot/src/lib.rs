@@ -1,5 +1,6 @@
 extern crate ctrlc;
 extern crate schemas;
+extern crate toml;
 extern crate tooling;
 
 use std::process::{exit};

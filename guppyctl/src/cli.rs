@@ -23,12 +23,18 @@ use std::time::{Instant};
 pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
   let mut app = App::new("guppyctl")
     .version("beta")
-    .subcommand(SubCommand::with_name("echo-api-id")
+    .subcommand(SubCommand::with_name("auth")
+      .about("Authenticate with guppybot.org")
+    )
+    .subcommand(SubCommand::with_name("deauth")
+      .about("Deauthenticate with guppybot.org")
+    )
+    /*.subcommand(SubCommand::with_name("echo-api-id")
       .about("Print the registered API identifier")
     )
     .subcommand(SubCommand::with_name("echo-machine-id")
       .about("Print the registered machine identifier")
-    )
+    )*/
     .subcommand(SubCommand::with_name("install-self")
       .about("Install guppybot")
       .arg(Arg::with_name("DEBUG_ALT_SYSROOT")
@@ -99,6 +105,24 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     )
   ;
   let code = match app.clone().get_matches().subcommand() {
+    ("auth", Some(_matches)) => {
+      match auth() {
+        Err(e) => {
+          eprintln!("auth: {:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
+    ("deauth", Some(_matches)) => {
+      match deauth() {
+        Err(e) => {
+          eprintln!("deauth: {:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
     ("install-self", Some(matches)) => {
       let alt_sysroot_path = matches.value_of("DEBUG_ALT_SYSROOT")
         .map(|s| PathBuf::from(s));
@@ -205,20 +229,24 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
   exit(code)
 }
 
-fn _ensure_api_auth() -> Maybe {
+fn _query_api_auth_config() -> Maybe<(Option<String>, Option<String>)> {
   let mut old_api_id = None;
   let mut old_secret_token = None;
   let mut chan = CtlChannel::open_default()?;
-  chan.send(&Ctl2Bot::_QueryApiAuth)?;
+  chan.send(&Ctl2Bot::_QueryApiAuthConfig)?;
   match chan.recv()? {
-    Bot2Ctl::_QueryApiAuth(Some(res)) => {
+    Bot2Ctl::_QueryApiAuthConfig(Some(res)) => {
       old_api_id = res.api_id;
       old_secret_token = res.secret_token;
     }
-    Bot2Ctl::_QueryApiAuth(None) => {}
+    Bot2Ctl::_QueryApiAuthConfig(None) => {}
     _ => return Err(fail("IPC protocol error")),
   };
   chan.hup();
+  Ok((old_api_id, old_secret_token))
+}
+
+fn _retry_api_auth(old_api_id: Option<String>, old_secret_token: Option<String>) -> Maybe {
   let mut new_api_id = None;
   let mut new_secret_token = None;
   if old_api_id.is_none() {
@@ -241,26 +269,66 @@ fn _ensure_api_auth() -> Maybe {
     }
     new_secret_token = Some(line);
   }
-  let api_id = old_api_id.or_else(|| new_api_id);
+  let api_id = old_api_id.or_else(|| new_api_id.clone());
   if api_id.is_none() {
     return Err(fail("missing API authentication details: API ID"));
   }
-  let secret_token = old_secret_token.or_else(|| new_secret_token);
+  let secret_token = old_secret_token.or_else(|| new_secret_token.clone());
   if secret_token.is_none() {
     return Err(fail("missing API authentication details: secret token"));
   }
-  let api_id = api_id.unwrap();
-  let secret_token = secret_token.unwrap();
+  if new_api_id.is_some() || new_secret_token.is_some() {
+    let api_id = api_id.unwrap();
+    let secret_token = secret_token.unwrap();
+    let mut chan = CtlChannel::open_default()?;
+    chan.send(&Ctl2Bot::_DumpApiAuthConfig{api_id, secret_token})?;
+    match chan.recv()? {
+      Bot2Ctl::_DumpApiAuthConfig(Some(_)) => {}
+      Bot2Ctl::_DumpApiAuthConfig(None) => {
+        return Err(fail("failed to write new API auth config"));
+      }
+      _ => return Err(fail("IPC protocol error")),
+    }
+    chan.hup();
+  }
   let mut chan = CtlChannel::open_default()?;
-  chan.send(&Ctl2Bot::_TryApiAuth{api_id, secret_token})?;
+  chan.send(&Ctl2Bot::_RetryApiAuth)?;
   match chan.recv()? {
-    Bot2Ctl::_TryApiAuth(Some(_)) => {}
-    Bot2Ctl::_TryApiAuth(None) => {
+    Bot2Ctl::_RetryApiAuth(Some(_)) => {}
+    Bot2Ctl::_RetryApiAuth(None) => {
       return Err(fail("API authentication failed"));
     }
     _ => return Err(fail("IPC protocol error")),
   }
   chan.hup();
+  Ok(())
+}
+
+fn _ensure_api_auth() -> Maybe {
+  _query_api_auth_config()
+    .map(|_| ())
+    .map_err(|e| e.push("missing API authentication details"))
+}
+
+pub fn auth() -> Maybe {
+  let (api_id, secret_token) = _query_api_auth_config()?;
+  _retry_api_auth(api_id, secret_token)?;
+  println!("Successfully authenticated.");
+  Ok(())
+}
+
+pub fn deauth() -> Maybe {
+  let mut chan = CtlChannel::open_default()?;
+  chan.send(&Ctl2Bot::_UndoApiAuth)?;
+  match chan.recv()? {
+    Bot2Ctl::_UndoApiAuth(Some(_)) => {}
+    Bot2Ctl::_UndoApiAuth(None) => {
+      return Err(fail("failed to deauthenticate"));
+    }
+    _ => return Err(fail("IPC protocol error")),
+  }
+  chan.hup();
+  println!("Deauthenticated.");
   Ok(())
 }
 

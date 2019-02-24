@@ -10,24 +10,24 @@ use serde::de::{DeserializeOwned};
 use std::io::{Cursor};
 use std::thread::{JoinHandle, spawn};
 
-pub enum Chan2RawMsg {
+pub enum Chan2Raw {
 }
 
-pub enum Raw2ChanMsg {
+pub enum Raw2Chan {
   Registry(ws::Sender),
   SignedBin(Vec<u8>),
 }
 
 pub struct RawWsConn {
-  chan2raw_r: Receiver<Chan2RawMsg>,
-  raw2chan_s: Sender<Raw2ChanMsg>,
+  chan2raw_r: Receiver<Chan2Raw>,
+  raw2chan_s: Sender<Raw2Chan>,
   registry_s: ws::Sender,
 }
 
 impl RawWsConn {
-  pub fn new(chan2raw_r: Receiver<Chan2RawMsg>, raw2chan_s: Sender<Raw2ChanMsg>, registry_s: ws::Sender) -> RawWsConn {
+  pub fn new(chan2raw_r: Receiver<Chan2Raw>, raw2chan_s: Sender<Raw2Chan>, registry_s: ws::Sender) -> RawWsConn {
     // TODO
-    raw2chan_s.send(Raw2ChanMsg::Registry(registry_s.clone())).unwrap();
+    raw2chan_s.send(Raw2Chan::Registry(registry_s.clone())).unwrap();
     RawWsConn{
       chan2raw_r,
       raw2chan_s,
@@ -50,7 +50,7 @@ impl ws::Handler for RawWsConn {
   fn on_message(&mut self, msg: ws::Message) -> ws::Result<()> {
     if let ws::Message::Binary(bin) = msg {
       // TODO
-      self.raw2chan_s.send(Raw2ChanMsg::SignedBin(bin)).unwrap();
+      self.raw2chan_s.send(Raw2Chan::SignedBin(bin)).unwrap();
     }
     Ok(())
   }
@@ -73,8 +73,8 @@ impl ws::Handler for RawWsConn {
 
 pub struct RegistryChannel {
   secret_token_buf: CryptoBuf,
-  chan2raw_s: Sender<Chan2RawMsg>,
-  raw2chan_r: Receiver<Raw2ChanMsg>,
+  chan2raw_s: Sender<Chan2Raw>,
+  raw2chan_r: Receiver<Raw2Chan>,
   registry_s: ws::Sender,
   join_h: JoinHandle<()>,
 }
@@ -101,7 +101,7 @@ impl RegistryChannel {
       }
     });
     match raw2chan_r.recv() {
-      Ok(Raw2ChanMsg::Registry(registry_s)) => {
+      Ok(Raw2Chan::Registry(registry_s)) => {
         Ok(RegistryChannel{
           secret_token_buf,
           chan2raw_s,
@@ -135,7 +135,7 @@ impl RegistryChannel {
 
   pub fn recv<T: DeserializeOwned>(&mut self) -> Maybe<T> {
     match self.raw2chan_r.recv() {
-      Ok(Raw2ChanMsg::SignedBin(bin)) => {
+      Ok(Raw2Chan::SignedBin(bin)) => {
         if bin.len() < 36 {
           return Err(fail("API message protocol failure"));
         }
