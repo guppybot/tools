@@ -86,7 +86,7 @@ impl RegistryChannel {
     let (chan2raw_s, chan2raw_r) = unbounded();
     let (raw2chan_s, raw2chan_r) = unbounded();
     let join_h = spawn(move || {
-      match ws::connect("wss://guppybot.org:443", |registry_s| {
+      match ws::connect("wss://guppybot.org:443/w/", |registry_s| {
         RawWsConn::new(
             chan2raw_r.clone(),
             raw2chan_s.clone(),

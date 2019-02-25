@@ -1,4 +1,5 @@
 extern crate ctrlc;
+extern crate minisodium;
 extern crate schemas;
 extern crate toml;
 extern crate tooling;

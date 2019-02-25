@@ -1,3 +1,4 @@
+use minisodium::util::{CryptoBuf};
 use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, Bot2RegistryV0};
 use tooling::config::{ApiConfig, ApiAuth};
 use tooling::ipc::*;
@@ -10,6 +11,19 @@ use std::path::{PathBuf};
 
 pub fn runloop() -> Maybe {
   Context::new().runloop()
+}
+
+fn base64_str_to_buf(len_bytes: usize, b64_str: &str) -> Option<CryptoBuf> {
+  let mut buf = Vec::with_capacity(len_bytes);
+  if base64::decode_config_buf(
+      b64_str,
+      base64::URL_SAFE,
+      &mut buf,
+  ).is_err() {
+    return None;
+  }
+  //Some(buf)
+  Some(CryptoBuf::from_vec(len_bytes, buf))
 }
 
 pub struct Context {
@@ -31,9 +45,14 @@ impl Context {
 }
 
 impl Context {
-  fn _query_api_auth_config(&mut self) -> Option<()> {
-    // TODO
-    None
+  fn _query_api_auth_config(&mut self) -> Option<QueryApiAuthConfig> {
+    self.api_cfg.as_ref()
+      .map(|api_cfg| {
+        QueryApiAuthConfig{
+          api_id: Some(api_cfg.auth.api_id.clone()),
+          secret_token: Some(api_cfg.auth.secret_token.clone()),
+        }
+      })
   }
 
   fn _dump_api_auth_config(&mut self) -> Option<()> {
@@ -48,8 +67,14 @@ impl Context {
     let api_cfg = self.api_cfg.as_ref().unwrap();
     if self.reg_chan.is_none() {
       // FIXME
-      //let secret_token_buf = _;
-      //self.reg_chan = Some(RegistryChannel::open());
+      let secret_token_buf = match base64_str_to_buf(32, &api_cfg.auth.secret_token) {
+        None => return None,
+        Some(buf) => buf,
+      };
+      self.reg_chan = RegistryChannel::open(secret_token_buf).ok();
+    }
+    if self.reg_chan.is_none() {
+      return None;
     }
     if self.reg_chan.as_mut().unwrap()
         .send(&Bot2RegistryV0::Auth{
@@ -58,8 +83,7 @@ impl Context {
     {
       return None;
     }
-    // TODO
-    None
+    Some(())
   }
 
   fn _undo_api_auth(&mut self) -> Option<()> {
@@ -96,8 +120,7 @@ impl Context {
           eprintln!("TRACE:   recv: {:?}", recv_msg);
           let send_msg = match recv_msg {
             Ctl2Bot::_QueryApiAuthConfig => {
-              // TODO
-              Bot2Ctl::_QueryApiAuthConfig(None)
+              Bot2Ctl::_QueryApiAuthConfig(self._query_api_auth_config())
             }
             Ctl2Bot::_DumpApiAuthConfig{api_id, secret_token} => {
               // FIXME: get rid of unwraps.
