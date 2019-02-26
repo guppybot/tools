@@ -14,22 +14,22 @@ pub enum Chan2Raw {
 }
 
 pub enum Raw2Chan {
-  Registry(ws::Sender),
-  SignedBin(Vec<u8>),
+  Open(ws::Sender),
+  Bin(Vec<u8>),
+  Close,
 }
 
 pub struct RawWsConn {
-  chan2raw_r: Receiver<Chan2Raw>,
+  //chan2raw_r: Receiver<Chan2Raw>,
   raw2chan_s: Sender<Raw2Chan>,
   registry_s: ws::Sender,
 }
 
 impl RawWsConn {
-  pub fn new(chan2raw_r: Receiver<Chan2Raw>, raw2chan_s: Sender<Raw2Chan>, registry_s: ws::Sender) -> RawWsConn {
+  pub fn new(/*chan2raw_r: Receiver<Chan2Raw>,*/ raw2chan_s: Sender<Raw2Chan>, registry_s: ws::Sender) -> RawWsConn {
     // TODO
-    raw2chan_s.send(Raw2Chan::Registry(registry_s.clone())).unwrap();
     RawWsConn{
-      chan2raw_r,
+      //chan2raw_r,
       raw2chan_s,
       registry_s,
     }
@@ -44,13 +44,14 @@ impl ws::Handler for RawWsConn {
 
   fn on_open(&mut self, _: ws::Handshake) -> ws::Result<()> {
     // TODO
+    self.raw2chan_s.send(Raw2Chan::Open(self.registry_s.clone())).unwrap();
     Ok(())
   }
 
   fn on_message(&mut self, msg: ws::Message) -> ws::Result<()> {
     if let ws::Message::Binary(bin) = msg {
       // TODO
-      self.raw2chan_s.send(Raw2Chan::SignedBin(bin)).unwrap();
+      self.raw2chan_s.send(Raw2Chan::Bin(bin)).unwrap();
     }
     Ok(())
   }
@@ -73,7 +74,7 @@ impl ws::Handler for RawWsConn {
 
 pub struct RegistryChannel {
   secret_token_buf: CryptoBuf,
-  chan2raw_s: Sender<Chan2Raw>,
+  //chan2raw_s: Sender<Chan2Raw>,
   raw2chan_r: Receiver<Raw2Chan>,
   registry_s: ws::Sender,
   join_h: JoinHandle<()>,
@@ -83,28 +84,27 @@ impl RegistryChannel {
   // TODO: open this with api authentication.
   //pub fn open_default() -> Maybe<RegistryChannel> {
   pub fn open(secret_token_buf: CryptoBuf) -> Maybe<RegistryChannel> {
-    let (chan2raw_s, chan2raw_r) = unbounded();
+    //let (chan2raw_s, chan2raw_r) = unbounded();
     let (raw2chan_s, raw2chan_r) = unbounded();
     let join_h = spawn(move || {
       match ws::connect("wss://guppybot.org:443/w/", |registry_s| {
         RawWsConn::new(
-            chan2raw_r.clone(),
+            //chan2raw_r.clone(),
             raw2chan_s.clone(),
             registry_s,
         )
       }) {
         Err(_) => {
-          // TODO
-          eprintln!("failed to connect to guppybot.org");
+          eprintln!("Failed to connect to guppybot.org");
         }
         Ok(_) => {}
       }
     });
     match raw2chan_r.recv() {
-      Ok(Raw2Chan::Registry(registry_s)) => {
+      Ok(Raw2Chan::Open(registry_s)) => {
         Ok(RegistryChannel{
           secret_token_buf,
-          chan2raw_s,
+          //chan2raw_s,
           raw2chan_r,
           registry_s,
           join_h,
@@ -135,7 +135,7 @@ impl RegistryChannel {
 
   pub fn recv<T: DeserializeOwned>(&mut self) -> Maybe<T> {
     match self.raw2chan_r.recv() {
-      Ok(Raw2Chan::SignedBin(bin)) => {
+      Ok(Raw2Chan::Bin(bin)) => {
         if bin.len() < 36 {
           return Err(fail("API message protocol failure"));
         }

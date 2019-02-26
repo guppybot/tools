@@ -7,6 +7,7 @@ workspace = "../tools"
 
 [dependencies]
 clap = "~2.32.0"
+crossbeam-utils = "^0.6"
 curl = "^0.4"
 minisodium = { path = "../../minisodium" }
 schemas = { path = "../../schemas" }

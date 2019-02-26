@@ -1,4 +1,4 @@
-CARGO_BUILD := cargo build --manifest-path ../tools/Cargo.toml --target-dir ./target --release
+CARGO_BUILD := cargo build --manifest-path ../tools/Cargo.toml --target-dir target --release
 
 .PHONY: all deps guppybot guppyctl clean
 

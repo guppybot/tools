@@ -1,4 +1,5 @@
 extern crate clap;
+extern crate crossbeam_utils;
 extern crate curl;
 extern crate minisodium;
 extern crate schemas;

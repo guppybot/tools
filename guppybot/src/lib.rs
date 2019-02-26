@@ -1,8 +1,13 @@
+extern crate base64;
+extern crate bincode;
+extern crate byteorder;
+#[macro_use] extern crate crossbeam_channel;
 extern crate ctrlc;
 extern crate minisodium;
 extern crate schemas;
 extern crate toml;
 extern crate tooling;
+extern crate ws;
 
 use std::process::{exit};
 

@@ -10,6 +10,13 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{PathBuf};
 
 #[derive(Serialize, Deserialize, Debug)]
+pub enum Ack<T> {
+  Done(T),
+  Pending,
+  Stopped,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Ctl2Bot {
   _QueryApiAuthConfig,
   _DumpApiAuthConfig{
@@ -44,9 +51,12 @@ pub enum Bot2Ctl {
   EchoMachineId(Option<EchoMachineId>),
   PrintConfig(Option<PrintConfig>),
   RegisterCiMachine(Option<RegisterCiMachine>),
+  AckRegisterCiMachine(Ack<RegisterCiMachine>),
   RegisterCiRepo(Option<RegisterCiRepo>),
+  AckRegisterCiRepo(Ack<RegisterCiRepo>),
   RegisterMachine(Option<RegisterMachine>),
-  ReloadConfig(Option<ReloadConfig>),
+  AckRegisterMachine(Ack<RegisterMachine>),
+  ReloadConfig(Option<()>),
   UnregisterCiMachine(Option<()>),
   UnregisterCiRepo(Option<()>),
   UnregisterMachine(Option<()>),
@@ -70,7 +80,7 @@ pub struct EchoMachineId {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PrintConfig {
-  //pub api_id: String,
+  pub api_id: String,
   pub machine_cfg: MachineConfigV0,
 }
 
@@ -90,12 +100,12 @@ pub struct RegisterCiRepo {
 pub struct RegisterMachine {
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/*#[derive(Serialize, Deserialize, Debug)]
 pub struct ReloadConfig {
   pub api_id: String,
   //pub secret_token: String,
   pub machine_cfg: MachineConfigV0,
-}
+}*/
 
 pub struct CtlListener {
   inner: UnixListener,
