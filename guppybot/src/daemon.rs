@@ -2,13 +2,13 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use crossbeam_channel::{Sender, Receiver, unbounded};
 use minisodium::{auth_sign, auth_verify};
 use minisodium::util::{CryptoBuf};
-use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, Bot2RegistryV0};
+use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2RegistryV0};
 use serde::{Serialize};
 use serde::de::{DeserializeOwned};
 use tooling::config::{ApiConfig, ApiAuth};
 use tooling::ipc::*;
 use tooling::query::{Maybe, Query, fail};
-//use tooling::registry::{RegistryChannel};
+use tooling::state::{RootManifest, Sysroot};
 
 use std::fs::{File};
 use std::io::{Read, Write, Cursor};
@@ -16,7 +16,7 @@ use std::path::{PathBuf};
 use std::thread::{JoinHandle, spawn};
 
 pub fn runloop() -> Maybe {
-  Context::new().runloop2()
+  Context::new()?.runloop2()
 }
 
 fn base64_str_to_buf(len_bytes: usize, b64_str: &str) -> Option<CryptoBuf> {
@@ -136,34 +136,46 @@ impl BotWsReceiver {
 }
 
 pub struct Context {
+  system_setup: SystemSetupV0,
+  sysroot: Sysroot,
+  root_manifest: RootManifest,
   api_cfg: Option<ApiConfig>,
   machine_cfg: Option<MachineConfigV0>,
   ctlchan_r: Receiver<CtlChannel>,
   ctlchan_s: Sender<CtlChannel>,
   reg2bot_r: Receiver<BotWsMsg>,
   reg2bot_s: Sender<BotWsMsg>,
-  //reg_chan: Option<RegistryChannel>,
   reg_conn_join_h: Option<JoinHandle<()>>,
   reg_sender: Option<BotWsSender>,
 }
 
 impl Context {
-  pub fn new() -> Context {
+  pub fn new() -> Maybe<Context> {
+    let system_setup = SystemSetupV0::query()?;
+    eprintln!("TRACE: system setup: {:?}", system_setup);
+    let sysroot = Sysroot::default();
+    eprintln!("TRACE: sysroot");
+    let root_manifest = RootManifest::load(&sysroot)?;
+    eprintln!("TRACE: root manifest");
     let api_cfg = ApiConfig::open_default().ok();
+    eprintln!("TRACE: api cfg: {:?}", api_cfg);
     let machine_cfg = MachineConfigV0::query().ok();
+    eprintln!("TRACE: machine cfg: {:?}", machine_cfg);
     let (ctlchan_s, ctlchan_r) = unbounded();
     let (reg2bot_s, reg2bot_r) = unbounded();
-    Context{
+    Ok(Context{
+      system_setup,
+      sysroot,
+      root_manifest,
       api_cfg,
       machine_cfg,
       ctlchan_r,
       ctlchan_s,
       reg2bot_r,
       reg2bot_s,
-      //reg_chan: None,
       reg_conn_join_h: None,
       reg_sender: None,
-    }
+    })
   }
 }
 
@@ -183,41 +195,15 @@ impl Context {
     None
   }
 
-  /*fn _retry_api_auth(&mut self) -> Option<()> {
+  fn _reconnect_ws(&mut self) -> Option<()> {
     if self.api_cfg.is_none() {
       return None;
     }
-    let api_cfg = self.api_cfg.as_ref().unwrap();
-    if self.reg_chan.is_none() {
-      let secret_token_buf = match base64_str_to_buf(32, &api_cfg.auth.secret_token) {
-        None => return None,
-        Some(buf) => buf,
-      };
-      self.reg_chan = RegistryChannel::open(secret_token_buf).ok();
-    }
-    if self.reg_chan.is_none() {
-      return None;
-    }
-    if self.reg_chan.as_mut().unwrap()
-        .send(&Bot2RegistryV0::Auth{
-          api_id: api_cfg.auth.api_id.clone(),
-        }).is_err()
-    {
-      return None;
-    }
-    Some(())
-  }*/
-
-  fn _reconnect_ws(&mut self, /*reg_conn_join_h: &mut Option<JoinHandle<()>>, reg_sender: &mut Option<BotWsSender>*/) -> Option<()> {
-    // TODO
-    if self.api_cfg.is_none() {
-      return None;
-    }
-    let api_cfg = self.api_cfg.as_ref().unwrap();
-    let reg2bot_s = self.reg2bot_s.clone();
     if self.reg_conn_join_h.is_some() {
       eprintln!("warning: reauthenticating on an existing connection");
     }
+    let api_cfg = self.api_cfg.as_ref().unwrap();
+    let reg2bot_s = self.reg2bot_s.clone();
     self.reg_conn_join_h = Some(spawn(move || {
       match ws::connect("wss://guppybot.org:443/w/", |registry_s| {
         BotWsConn{
@@ -246,17 +232,14 @@ impl Context {
     Some(())
   }
 
-  fn _retry_api_auth2(&mut self, /*reg_sender: &mut Option<BotWsSender>*/) -> Option<()> {
-    //unimplemented!();
+  fn _retry_api_auth2(&mut self) -> Option<()> {
     if self.api_cfg.is_none() {
       return None;
     }
-    let api_cfg = self.api_cfg.as_ref().unwrap();
-    //if self.reg_chan.is_none() {
     if self.reg_sender.is_none() {
       return None;
     }
-    //if self.reg_chan.as_mut().unwrap()
+    let api_cfg = self.api_cfg.as_ref().unwrap();
     if self.reg_sender.as_mut().unwrap()
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
@@ -284,12 +267,10 @@ impl Context {
     if self.api_cfg.is_none() {
       return None;
     }
-    let api_cfg = self.api_cfg.as_ref().unwrap();
-    //if self.reg_chan.is_none() {
     if self.reg_sender.is_none() {
       return None;
     }
-    //if self.reg_chan.as_mut().unwrap()
+    let api_cfg = self.api_cfg.as_ref().unwrap();
     if self.reg_sender.as_mut().unwrap()
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
@@ -313,7 +294,31 @@ impl Context {
 
   fn register_machine(&mut self) -> Option<()> {
     // TODO
-    None
+    if self.api_cfg.is_none() {
+      return None;
+    }
+    if self.machine_cfg.is_none() {
+      return None;
+    }
+    if self.reg_sender.is_none() {
+      return None;
+    }
+    let api_cfg = self.api_cfg.as_ref().unwrap();
+    let machine_cfg = self.machine_cfg.clone().unwrap();
+    if self.reg_sender.as_mut().unwrap()
+      .send_auth(
+          self.api_cfg.as_ref().map(|api| &api.auth),
+          &Bot2RegistryV0::RegisterMachine{
+            api_id: api_cfg.auth.api_id.clone(),
+            machine_cfg,
+            root_manifest_id: self.root_manifest.key_as_base64(),
+            system_setup: self.system_setup.clone(),
+          }
+      ).is_err()
+    {
+      return None;
+    }
+    Some(())
   }
 
   pub fn runloop2(&mut self) -> Maybe {
