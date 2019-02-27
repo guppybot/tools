@@ -168,6 +168,8 @@ pub struct Context {
   reg_sender: Option<BotWsSender>,
   auth_maybe: bool,
   auth_lock: Option<File>,
+  machine_reg_maybe: bool,
+  machine_reg: bool,
 }
 
 impl Context {
@@ -198,6 +200,8 @@ impl Context {
       reg_sender: None,
       auth_maybe: false,
       auth_lock: None,
+      machine_reg_maybe: false,
+      machine_reg: false,
     })
   }
 }
@@ -319,7 +323,8 @@ impl Context {
   }
 
   fn register_machine(&mut self) -> Option<()> {
-    // TODO
+    self.machine_reg_maybe = false;
+    self.machine_reg = false;
     if self.api_cfg.is_none() {
       return None;
     }
@@ -344,6 +349,7 @@ impl Context {
     {
       return None;
     }
+    self.machine_reg_maybe = true;
     Some(())
   }
 
@@ -372,7 +378,7 @@ impl Context {
           Err(_) => {}
           Ok(mut chan) => {
             // TODO
-            eprintln!("TRACE: guppybot: accept ipc conn");
+            //eprintln!("TRACE: guppybot: accept ipc conn");
             let recv_msg: Ctl2Bot = match chan.recv() {
               Err(_) => continue,
               Ok(msg) => msg,
@@ -434,8 +440,16 @@ impl Context {
                 Bot2Ctl::RegisterCiRepo(self.register_ci_repo(repo_url))
               }
               Ctl2Bot::RegisterMachine => {
-                // TODO
                 Bot2Ctl::RegisterMachine(self.register_machine())
+              }
+              Ctl2Bot::AckRegisterMachine => {
+                let ack = match (self.machine_reg_maybe, self.machine_reg) {
+                  (true,  true)  => Ack::Done(()),
+                  (false, false) |
+                  (true,  false) => Ack::Pending,
+                  _ => Ack::Stopped,
+                };
+                Bot2Ctl::AckRegisterMachine(ack)
               }
               Ctl2Bot::ReloadConfig => {
                 // TODO
@@ -502,6 +516,16 @@ impl Context {
                 // Cleanup auth state.
                 self.auth_maybe = false;
                 self.auth_lock = None;
+              }
+              Registry2BotV0::RegisterMachine(Some(_)) => {
+                if !self.machine_reg_maybe {
+                  continue;
+                }
+                self.machine_reg = true;
+              }
+              Registry2BotV0::RegisterMachine(None) => {
+                self.machine_reg_maybe = false;
+                self.machine_reg = false;
               }
               _ => {}
             }

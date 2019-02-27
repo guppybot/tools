@@ -325,6 +325,10 @@ fn _retry_api_auth(old_api_id: Option<String>, old_secret_token: Option<String>)
   Ok(())
 }
 
+fn _undo_api_auth() -> Maybe {
+  unimplemented!();
+}
+
 fn _ensure_api_auth() -> Maybe {
   _query_api_auth_config()
     .map(|_| ())
@@ -349,6 +353,7 @@ pub fn deauth() -> Maybe {
     _ => return Err(fail("IPC protocol error")),
   }
   chan.hup();
+  // TODO
   println!("Deauthenticated.");
   Ok(())
 }
@@ -483,14 +488,36 @@ pub fn register_machine() -> Maybe {
   _ensure_api_auth()?;
   let mut chan = CtlChannel::open_default()?;
   chan.send(&Ctl2Bot::RegisterMachine)?;
-  let res = match chan.recv()? {
-    Bot2Ctl::RegisterMachine(res) => res,
-    _ => return Err(fail("IPC protocol error")),
-  };
+  let msg = chan.recv()?;
   chan.hup();
-  if res.is_none() {
-    // TODO
+  match msg {
+    Bot2Ctl::RegisterMachine(Some(_)) => {}
+    Bot2Ctl::RegisterMachine(None) => {
+      return Err(fail("failed to register machine"));
+    }
+    _ => return Err(fail("IPC protocol error")),
   }
+  let backoff = Backoff::new();
+  loop {
+    let mut chan = CtlChannel::open_default()?;
+    chan.send(&Ctl2Bot::AckRegisterMachine)?;
+    let msg = chan.recv()?;
+    chan.hup();
+    match msg {
+      Bot2Ctl::AckRegisterMachine(Done(_)) => {
+        break;
+      }
+      Bot2Ctl::AckRegisterMachine(Pending) => {
+        backoff.snooze();
+        continue;
+      }
+      Bot2Ctl::AckRegisterMachine(Stopped) => {
+        return Err(fail("failed to register machine"));
+      }
+      _ => return Err(fail("IPC protocol error")),
+    }
+  }
+  println!("Successfully registered machine.");
   Ok(())
 }
 
