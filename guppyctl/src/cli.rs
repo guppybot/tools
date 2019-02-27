@@ -1,4 +1,5 @@
 use clap::{App, Arg, ArgMatches, SubCommand};
+use crossbeam_utils::{Backoff};
 use curl::easy::{Easy, List};
 use minisodium::{sign_verify};
 use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0, CiConfigV0};
@@ -301,6 +302,26 @@ fn _retry_api_auth(old_api_id: Option<String>, old_secret_token: Option<String>)
     _ => return Err(fail("IPC protocol error")),
   }
   chan.hup();
+  let backoff = Backoff::new();
+  loop {
+    let mut chan = CtlChannel::open_default()?;
+    chan.send(&Ctl2Bot::_AckRetryApiAuth)?;
+    let msg = chan.recv()?;
+    chan.hup();
+    match msg {
+      Bot2Ctl::_AckRetryApiAuth(Done(_)) => {
+        break;
+      }
+      Bot2Ctl::_AckRetryApiAuth(Pending) => {
+        backoff.snooze();
+        continue;
+      }
+      Bot2Ctl::_AckRetryApiAuth(Stopped) => {
+        return Err(fail("API authentication failed"));
+      }
+      _ => return Err(fail("IPC protocol error")),
+    }
+  }
   Ok(())
 }
 
@@ -415,6 +436,28 @@ pub fn register_ci_repo(repo_url: Option<&str>) -> Maybe {
   if res.is_none() {
     return Err(fail("failed to register CI repo"));
   }
+  /*let mut res = None;
+  let backoff = Backoff::new();
+  loop {
+    let mut chan = CtlChannel::open_default()?;
+    chan.send(&Ctl2Bot::AckRegisterCiRepo{repo_url})?;
+    let res = match chan.recv()? {
+      Bot2Ctl::AckRegisterCiRepo(Done(r)) => {
+        res = Some(r);
+      }
+      Bot2Ctl::AckRegisterCiRepo(Pending) => {
+        chan.hup();
+        backoff.snooze();
+        continue;
+      }
+      Bot2Ctl::AckRegisterCiRepo(Stopped) => {
+        chan.hup();
+        return Err(fail("failed to register CI repo"));
+      }
+      _ => return Err(fail("IPC protocol error")),
+    };
+    chan.hup();
+  }*/
   let res = res.unwrap();
   println!("Almost done! There is one remaining manual configuration step.");
   println!("");

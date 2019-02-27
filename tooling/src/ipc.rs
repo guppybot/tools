@@ -1,3 +1,5 @@
+pub use self::{Ack::*};
+
 use crate::query::{Maybe, fail};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, NativeEndian};
@@ -24,6 +26,7 @@ pub enum Ctl2Bot {
     secret_token: String,
   },
   _RetryApiAuth,
+  _AckRetryApiAuth,
   _UndoApiAuth,
   EchoApiId,
   EchoMachineId,
@@ -46,6 +49,7 @@ pub enum Bot2Ctl {
   _QueryApiAuthConfig(Option<QueryApiAuthConfig>),
   _DumpApiAuthConfig(Option<()>),
   _RetryApiAuth(Option<()>),
+  _AckRetryApiAuth(Ack<()>),
   _UndoApiAuth(Option<()>),
   EchoApiId(Option<EchoApiId>),
   EchoMachineId(Option<EchoMachineId>),
@@ -54,8 +58,8 @@ pub enum Bot2Ctl {
   AckRegisterCiMachine(Ack<RegisterCiMachine>),
   RegisterCiRepo(Option<RegisterCiRepo>),
   AckRegisterCiRepo(Ack<RegisterCiRepo>),
-  RegisterMachine(Option<RegisterMachine>),
-  AckRegisterMachine(Ack<RegisterMachine>),
+  RegisterMachine(Option<()>),
+  AckRegisterMachine(Ack<()>),
   ReloadConfig(Option<()>),
   UnregisterCiMachine(Option<()>),
   UnregisterCiRepo(Option<()>),
@@ -96,9 +100,9 @@ pub struct RegisterCiRepo {
   pub webhook_settings_url: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/*#[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterMachine {
-}
+}*/
 
 /*#[derive(Serialize, Deserialize, Debug)]
 pub struct ReloadConfig {
