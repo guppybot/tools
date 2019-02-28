@@ -293,7 +293,7 @@ impl Context {
     None
   }
 
-  fn register_ci_repo(&mut self, repo_url: String) -> Option<RegisterCiRepo> {
+  fn register_ci_repo(&mut self, repo_url: String) -> Option<()> {
     if self.api_cfg.is_none() {
       return None;
     }
@@ -306,6 +306,7 @@ impl Context {
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::RegisterCiRepo{
             api_id: api_cfg.auth.api_id.clone(),
+            group_id: None,
             repo_url: repo_url.clone(),
           }
       ).is_err()
@@ -313,13 +314,14 @@ impl Context {
       return None;
     }
     // FIXME: record this as a pending request.
-    let settings_url = format!("{}/settings/hooks", repo_url);
+    /*let settings_url = format!("{}/settings/hooks", repo_url);
     Some(RegisterCiRepo{
       repo_url,
       webhook_payload_url: "https://guppybot.org/x/github/longshot".to_string(),
       webhook_secret: "AAAEEEIIIOOOUUU".to_string(),
       webhook_settings_url: settings_url,
-    })
+    })*/
+    Some(())
   }
 
   fn register_machine(&mut self) -> Option<()> {
@@ -341,9 +343,9 @@ impl Context {
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::RegisterMachine{
             api_id: api_cfg.auth.api_id.clone(),
-            machine_cfg,
-            root_manifest_id: self.root_manifest.key_as_base64(),
+            machine_id: self.root_manifest.key_as_base64(),
             system_setup: self.system_setup.clone(),
+            machine_cfg,
           }
       ).is_err()
     {
@@ -432,12 +434,24 @@ impl Context {
                 // TODO
                 Bot2Ctl::PrintConfig(None)
               }
+              Ctl2Bot::RegisterCiGroupMachine{group_id} => {
+                // TODO
+                unimplemented!();
+              }
+              Ctl2Bot::RegisterCiGroupRepo{group_id, repo_url} => {
+                // TODO
+                unimplemented!();
+              }
               Ctl2Bot::RegisterCiMachine{repo_url} => {
                 // TODO
                 Bot2Ctl::RegisterCiMachine(None)
               }
               Ctl2Bot::RegisterCiRepo{repo_url} => {
                 Bot2Ctl::RegisterCiRepo(self.register_ci_repo(repo_url))
+              }
+              Ctl2Bot::AckRegisterCiRepo => {
+                // TODO
+                unimplemented!();
               }
               Ctl2Bot::RegisterMachine => {
                 Bot2Ctl::RegisterMachine(self.register_machine())
@@ -501,7 +515,7 @@ impl Context {
                 if !self.auth_maybe {
                   continue;
                 }
-                let mut lock_f = match File::create(self.sysroot.base_dir.join(".auth.lock")) {
+                let lock_f = match File::create(self.sysroot.base_dir.join(".auth.lock")) {
                   Err(_) => {
                     // Cleanup auth state.
                     self.auth_maybe = false;
@@ -516,6 +530,10 @@ impl Context {
                 // Cleanup auth state.
                 self.auth_maybe = false;
                 self.auth_lock = None;
+              }
+              Registry2BotV0::RegisterCiRepo(Some(_)) => {
+              }
+              Registry2BotV0::RegisterCiRepo(None) => {
               }
               Registry2BotV0::RegisterMachine(Some(_)) => {
                 if !self.machine_reg_maybe {

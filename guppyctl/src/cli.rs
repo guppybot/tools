@@ -47,6 +47,27 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     .subcommand(SubCommand::with_name("print-config")
       .about("Print the currently loaded configuration")
     )
+    .subcommand(SubCommand::with_name("register-ci-group-machine")
+      .about("Register this machine to provide CI for a group")
+      .arg(Arg::with_name("GROUP_ID")
+        .index(1)
+        .required(true)
+        .help("The group ID.")
+      )
+    )
+    .subcommand(SubCommand::with_name("register-ci-group-repo")
+      .about("Register a repository with a CI group")
+      .arg(Arg::with_name("GROUP_ID")
+        .index(1)
+        .required(true)
+        .help("The group ID.")
+      )
+      .arg(Arg::with_name("REPOSITORY_URL")
+        .index(2)
+        .required(true)
+        .help("The URL to the repository.")
+      )
+    )
     .subcommand(SubCommand::with_name("register-ci-machine")
       .about("Register this machine to provide CI for a repository")
       .arg(Arg::with_name("REPOSITORY_URL")
@@ -139,6 +160,24 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
       match print_config() {
         Err(e) => {
           eprintln!("print-config: {:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
+    ("register-ci-group-machine", Some(matches)) => {
+      match register_ci_group_machine() {
+        Err(e) => {
+          eprintln!("register-ci-group-machine: {:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
+    ("register-ci-group-repo", Some(matches)) => {
+      match register_ci_group_repo() {
+        Err(e) => {
+          eprintln!("register-ci-group-repo: {:?}", e);
           1
         }
         Ok(_) => 0,
@@ -405,6 +444,16 @@ pub fn print_config() -> Maybe {
   Ok(())
 }
 
+pub fn register_ci_group_machine() -> Maybe {
+  // TODO
+  Ok(())
+}
+
+pub fn register_ci_group_repo() -> Maybe {
+  // TODO
+  Ok(())
+}
+
 pub fn register_ci_machine(repo_url: Option<&str>) -> Maybe {
   if repo_url.is_none() {
     return Err(fail("missing repository URL"));
@@ -441,45 +490,43 @@ pub fn register_ci_repo(repo_url: Option<&str>) -> Maybe {
   if res.is_none() {
     return Err(fail("failed to register CI repo"));
   }
-  /*let mut res = None;
   let backoff = Backoff::new();
+  let mut rep = None;
   loop {
     let mut chan = CtlChannel::open_default()?;
-    chan.send(&Ctl2Bot::AckRegisterCiRepo{repo_url})?;
-    let res = match chan.recv()? {
+    chan.send(&Ctl2Bot::AckRegisterCiRepo)?;
+    let msg = chan.recv()?;
+    chan.hup();
+    match msg {
       Bot2Ctl::AckRegisterCiRepo(Done(r)) => {
-        res = Some(r);
+        rep = Some(r);
+        break;
       }
       Bot2Ctl::AckRegisterCiRepo(Pending) => {
-        chan.hup();
         backoff.snooze();
         continue;
       }
       Bot2Ctl::AckRegisterCiRepo(Stopped) => {
-        chan.hup();
         return Err(fail("failed to register CI repo"));
       }
       _ => return Err(fail("IPC protocol error")),
-    };
-    chan.hup();
-  }*/
-  let res = res.unwrap();
+    }
+  }
+  let rep = rep.unwrap();
   println!("Almost done! There is one remaining manual configuration step.");
   println!("");
   println!("guppybot.org has prepared the following webhook configuration for the");
   println!("repository:");
   println!("");
-  //println!("    Payload URL:  https://guppybot.org/x/github/longshot");
-  println!("    Payload URL:  {}", res.webhook_payload_url);
+  println!("    Payload URL:  {}", rep.webhook_payload_url);
   println!("    Content type: application/json");
-  println!("    Secret:       {}", res.webhook_secret);
+  println!("    Secret:       {}", rep.webhook_secret);
   println!("    Events:       Send me everything (optional)");
   println!("");
   println!("Please add a webhook with the above configuration in your repository");
   println!("settings, probably at the following URL:");
   println!("");
-  //println!("    https://github.com/asdf/qwerty/settings/hooks");
-  println!("    {}", res.webhook_settings_url);
+  println!("    {}", rep.webhook_settings_url);
   println!("");
   Ok(())
 }
