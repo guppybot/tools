@@ -229,57 +229,51 @@ impl Query for GpusV0 {
           }
         }
         Some("Class:") => {
-          //if line_parts.next().unwrap().contains("VGA") {
           match u16::from_str_radix(line_parts.next().unwrap(), 16) {
-            // FIXME: store pci device class.
             Ok(class) => {
               record.class = class;
-              if class == 0x0300 {
-                record.is_vga = true;
-              }
             }
             _ => {}
           }
         }
         Some("Vendor:") => {
-          //if line_parts.next().unwrap() == "NVIDIA Corporation" {
           match u16::from_str_radix(line_parts.next().unwrap(), 16) {
             Ok(vendor) => {
               record.vendor = vendor;
-              if vendor == 0x10de {
-                record.is_nvidia = true;
-              }
             }
             _ => {}
           }
         }
         Some("Device:") => {
-          if record.is_gpu() {
-            /*let device_parts: Vec<_> = line_parts.next().unwrap().split_whitespace().collect();
-            match device_parts[0] {
-              "Device" => {
-                record.device = u16::from_str_radix(device_parts[1], 16).unwrap();
-              }
-              _ => panic!(),
-            }*/
-            record.device = u16::from_str_radix(line_parts.next().unwrap(), 16).unwrap();
+          match u16::from_str_radix(line_parts.next().unwrap(), 16) {
+            Ok(device) => {
+              record.device = device;
+            }
+            _ => {}
           }
         }
         Some("SVendor:") => {
-          if record.is_gpu() {
-            //record.svendor = line_parts.next().unwrap().to_owned();
-            record.svendor = u16::from_str_radix(line_parts.next().unwrap(), 16).unwrap();
+          match u16::from_str_radix(line_parts.next().unwrap(), 16) {
+            Ok(svendor) => {
+              record.svendor = Some(svendor);
+            }
+            _ => {}
           }
         }
         Some("SDevice:") => {
-          if record.is_gpu() {
-            //record.sdevice = line_parts.next().unwrap().to_owned();
-            record.sdevice = u16::from_str_radix(line_parts.next().unwrap(), 16).unwrap();
+          match u16::from_str_radix(line_parts.next().unwrap(), 16) {
+            Ok(sdevice) => {
+              record.sdevice = Some(sdevice);
+            }
+            _ => {}
           }
         }
         Some("Rev:") => {
-          if record.is_gpu() {
-            record.rev = u8::from_str_radix(line_parts.next().unwrap(), 16).ok();
+          match u8::from_str_radix(line_parts.next().unwrap(), 16) {
+            Ok(rev) => {
+              record.rev = Some(rev);
+            }
+            _ => {}
           }
         }
         _ => {}
