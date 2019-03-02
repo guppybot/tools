@@ -3,7 +3,7 @@ extern crate bincode;
 extern crate byteorder;
 #[macro_use] extern crate crossbeam_channel;
 extern crate ctrlc;
-extern crate minisodium;
+extern crate monosodium;
 extern crate schemas;
 extern crate toml;
 extern crate tooling;

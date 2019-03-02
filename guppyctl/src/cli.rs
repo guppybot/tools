@@ -1,7 +1,7 @@
 use clap::{App, Arg, ArgMatches, SubCommand};
 use crossbeam_utils::{Backoff};
 use curl::easy::{Easy, List};
-use minisodium::{sign_verify};
+//use monosodium::{sign_verify};
 use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0, CiConfigV0};
 use semver::{Version};
 use serde_json::{Value as JsonValue};

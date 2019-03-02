@@ -2,8 +2,8 @@ use crate::query::{Maybe, fail};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use crossbeam_channel::{Sender, Receiver, unbounded};
-use minisodium::{auth_sign, auth_verify};
-use minisodium::util::{CryptoBuf};
+use monosodium::{auth_sign, auth_verify};
+use monosodium::util::{CryptoBuf};
 use serde::{Serialize};
 use serde::de::{DeserializeOwned};
 

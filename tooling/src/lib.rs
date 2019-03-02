@@ -4,7 +4,7 @@ extern crate byteorder;
 extern crate chrono;
 #[macro_use] extern crate crossbeam_channel;
 extern crate hex;
-extern crate minisodium;
+extern crate monosodium;
 extern crate num_cpus;
 extern crate schemas;
 #[macro_use] extern crate serde_derive;

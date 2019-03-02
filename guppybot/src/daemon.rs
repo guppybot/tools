@@ -1,7 +1,7 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use crossbeam_channel::{Sender, Receiver, unbounded};
-use minisodium::{auth_sign, auth_verify};
-use minisodium::util::{CryptoBuf};
+use monosodium::{auth_sign, auth_verify};
+use monosodium::util::{CryptoBuf};
 use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2RegistryV0, Registry2BotV0};
 use serde::{Serialize};
 use serde::de::{DeserializeOwned};

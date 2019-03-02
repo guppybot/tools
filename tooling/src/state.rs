@@ -3,8 +3,8 @@ use crate::config::{ApiAuth};
 use crate::docker::{DockerImage};
 use crate::query::{Maybe, fail};
 
-use minisodium::{generic_hash};
-use minisodium::util::{CryptoBuf};
+use monosodium::{generic_hash};
+use monosodium::util::{CryptoBuf};
 use schemas::v1::{
   CudaToolkitVersionV0::{self, *},
   DistroIdV0::{self, *},
