@@ -1,6 +1,7 @@
 extern crate base64;
 extern crate bincode;
 extern crate byteorder;
+extern crate chrono;
 #[macro_use] extern crate crossbeam_channel;
 extern crate ctrlc;
 extern crate monosodium;

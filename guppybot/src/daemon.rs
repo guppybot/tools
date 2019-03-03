@@ -1,8 +1,9 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use chrono::{Utc};
 use crossbeam_channel::{Sender, Receiver, unbounded};
 use monosodium::{auth_sign, auth_verify};
 use monosodium::util::{CryptoBuf};
-use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2RegistryV0, Registry2BotV0};
+use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2RegistryV0, Registry2BotV0, _NewCiRunV0, RegisterCiRepoV0};
 use serde::{Serialize};
 use serde::de::{DeserializeOwned};
 use tooling::config::{ApiConfig, ApiAuth};
@@ -10,6 +11,7 @@ use tooling::ipc::*;
 use tooling::query::{Maybe, Query, fail};
 use tooling::state::{RootManifest, Sysroot};
 
+use std::collections::{VecDeque};
 use std::fs::{File};
 use std::io::{Read, Write, Cursor};
 use std::path::{PathBuf};
@@ -51,6 +53,7 @@ impl ws::Handler for BotWsConn {
   }
 
   fn on_open(&mut self, _: ws::Handshake) -> ws::Result<()> {
+    eprintln!("TRACE: BotWsConn: on_open");
     self.reg2bot_s.send(BotWsMsg::Open(BotWsSender{
       registry_s: self.registry_s.clone(),
       secret_token_buf: None,
@@ -154,7 +157,12 @@ impl BotWsSender {
   }
 }
 
-pub struct Context {
+enum Event {
+  RegisterCiRepo(RegisterCiRepoV0),
+  CancelRegisterCiRepo,
+}
+
+struct Context {
   system_setup: SystemSetupV0,
   sysroot: Sysroot,
   root_manifest: RootManifest,
@@ -170,6 +178,7 @@ pub struct Context {
   auth_lock: Option<File>,
   machine_reg_maybe: bool,
   machine_reg: bool,
+  evbuf: VecDeque<Event>,
 }
 
 impl Context {
@@ -202,6 +211,7 @@ impl Context {
       auth_lock: None,
       machine_reg_maybe: false,
       machine_reg: false,
+      evbuf: VecDeque::new(),
     })
   }
 }
@@ -232,7 +242,7 @@ impl Context {
     let api_cfg = self.api_cfg.as_ref().unwrap();
     let reg2bot_s = self.reg2bot_s.clone();
     self.reg_conn_join_h = Some(spawn(move || {
-      match ws::connect("wss://guppybot.org:443/w/", |registry_s| {
+      match ws::connect("wss://guppybot.org:443/w/v1/", |registry_s| {
         BotWsConn{
           reg2bot_s: reg2bot_s.clone(),
           registry_s,
@@ -451,7 +461,26 @@ impl Context {
               }
               Ctl2Bot::AckRegisterCiRepo => {
                 // TODO
-                unimplemented!();
+                match self.evbuf.pop_front() {
+                  Some(Event::RegisterCiRepo(rep)) => {
+                    Bot2Ctl::AckRegisterCiRepo(Done(RegisterCiRepo{
+                      repo_web_url: rep.repo_web_url,
+                      webhook_payload_url: rep.webhook_payload_url,
+                      webhook_settings_url: rep.webhook_settings_url,
+                      webhook_secret: rep.webhook_secret,
+                    }))
+                  }
+                  Some(Event::CancelRegisterCiRepo) => {
+                    Bot2Ctl::AckRegisterCiRepo(Stopped)
+                  }
+                  Some(e) => {
+                    self.evbuf.push_front(e);
+                    Bot2Ctl::AckRegisterCiRepo(Pending)
+                  }
+                  None => {
+                    Bot2Ctl::AckRegisterCiRepo(Pending)
+                  }
+                }
               }
               Ctl2Bot::RegisterMachine => {
                 Bot2Ctl::RegisterMachine(self.register_machine())
@@ -511,6 +540,46 @@ impl Context {
               Ok(msg) => msg,
             };
             match msg {
+              Registry2BotV0::_NewCiRun{api_key, ci_run_key, repo_clone_url, originator, ref_full, commit_hash, runspec} => {
+                // TODO
+                eprintln!("TRACE: guppybot: new ci run:");
+                eprintln!("TRACE: guppybot:   api key: {:?}", api_key);
+                eprintln!("TRACE: guppybot:   ci run key: {:?}", ci_run_key);
+                eprintln!("TRACE: guppybot:   repo clone url: {:?}", repo_clone_url);
+                eprintln!("TRACE: guppybot:   originator: {:?}", originator);
+                eprintln!("TRACE: guppybot:   ref full: {:?}", ref_full);
+                eprintln!("TRACE: guppybot:   commit hash: {:?}", commit_hash);
+                if self.api_cfg.is_none() {
+                  continue;
+                }
+                if self.reg_sender.is_none() {
+                  continue;
+                }
+                let api_cfg = self.api_cfg.as_ref().unwrap();
+                if self.reg_sender.as_mut().unwrap()
+                  .send_auth(
+                      self.api_cfg.as_ref().map(|api| &api.auth),
+                      &Bot2RegistryV0::_NewCiRun(Some(_NewCiRunV0{
+                        //api_key: api_cfg.auth.api_id.clone(),
+                        api_key,
+                        ci_run_key,
+                        task_count: Some(0),
+                        ts: Some(Utc::now().to_rfc3339()),
+                      }))
+                  ).is_err()
+                {
+                  continue;
+                }
+              }
+              Registry2BotV0::_StartCiTask(_) => {
+                // TODO
+              }
+              Registry2BotV0::_AppendCiTaskData(_) => {
+                // TODO
+              }
+              Registry2BotV0::_DoneCiTask(_) => {
+                // TODO
+              }
               Registry2BotV0::Auth(Some(_)) => {
                 if !self.auth_maybe {
                   continue;
@@ -531,9 +600,13 @@ impl Context {
                 self.auth_maybe = false;
                 self.auth_lock = None;
               }
-              Registry2BotV0::RegisterCiRepo(Some(_)) => {
+              Registry2BotV0::RegisterCiRepo(Some(rep)) => {
+                // TODO
+                self.evbuf.push_back(Event::RegisterCiRepo(rep));
               }
               Registry2BotV0::RegisterCiRepo(None) => {
+                // TODO
+                self.evbuf.push_back(Event::CancelRegisterCiRepo);
               }
               Registry2BotV0::RegisterMachine(Some(_)) => {
                 if !self.machine_reg_maybe {
@@ -549,7 +622,10 @@ impl Context {
             }
           }
           Ok(BotWsMsg::Hup) => {
-            // TODO
+            // FIXME: try to reconnect/reauth.
+            if let Some(h) = self.reg_conn_join_h.take() {
+              h.join().ok();
+            }
           }
           _ => {}
         }

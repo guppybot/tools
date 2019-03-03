@@ -112,10 +112,10 @@ pub struct RegisterCiMachine {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterCiRepo {
-  pub repo_url: String,
+  pub repo_web_url: String,
   pub webhook_payload_url: String,
+  pub webhook_settings_url: Option<String>,
   pub webhook_secret: String,
-  pub webhook_settings_url: String,
 }
 
 /*#[derive(Serialize, Deserialize, Debug)]

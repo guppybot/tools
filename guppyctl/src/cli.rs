@@ -521,12 +521,12 @@ pub fn register_ci_repo(repo_url: Option<&str>) -> Maybe {
   println!("    Payload URL:  {}", rep.webhook_payload_url);
   println!("    Content type: application/json");
   println!("    Secret:       {}", rep.webhook_secret);
-  println!("    Events:       Send me everything (optional)");
+  println!("    Events:       Send me everything");
   println!("");
   println!("Please add a webhook with the above configuration in your repository");
   println!("settings, probably at the following URL:");
   println!("");
-  println!("    {}", rep.webhook_settings_url);
+  println!("    {}", rep.webhook_settings_url.unwrap_or_else(|| "".to_string()));
   println!("");
   Ok(())
 }
