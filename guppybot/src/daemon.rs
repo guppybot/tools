@@ -163,9 +163,9 @@ enum Event {
 }
 
 struct Context {
-  system_setup: SystemSetupV0,
   sysroot: Sysroot,
   root_manifest: RootManifest,
+  system_setup: SystemSetupV0,
   api_cfg: Option<ApiConfig>,
   machine_cfg: Option<MachineConfigV0>,
   ctlchan_r: Receiver<CtlChannel>,
@@ -175,7 +175,7 @@ struct Context {
   reg_conn_join_h: Option<JoinHandle<()>>,
   reg_sender: Option<BotWsSender>,
   auth_maybe: bool,
-  auth_lock: Option<File>,
+  auth: bool,
   machine_reg_maybe: bool,
   machine_reg: bool,
   evbuf: VecDeque<Event>,
@@ -183,12 +183,12 @@ struct Context {
 
 impl Context {
   pub fn new() -> Maybe<Context> {
-    let system_setup = SystemSetupV0::query()?;
-    eprintln!("TRACE: system setup: {:?}", system_setup);
     let sysroot = Sysroot::default();
     eprintln!("TRACE: sysroot");
     let root_manifest = RootManifest::load(&sysroot)?;
     eprintln!("TRACE: root manifest");
+    let system_setup = SystemSetupV0::query()?;
+    eprintln!("TRACE: system setup: {:?}", system_setup);
     let api_cfg = ApiConfig::open_default().ok();
     eprintln!("TRACE: api cfg: {:?}", api_cfg);
     let machine_cfg = MachineConfigV0::query().ok();
@@ -196,9 +196,9 @@ impl Context {
     let (ctlchan_s, ctlchan_r) = unbounded();
     let (reg2bot_s, reg2bot_r) = unbounded();
     Ok(Context{
-      system_setup,
       sysroot,
       root_manifest,
+      system_setup,
       api_cfg,
       machine_cfg,
       ctlchan_r,
@@ -208,7 +208,7 @@ impl Context {
       reg_conn_join_h: None,
       reg_sender: None,
       auth_maybe: false,
-      auth_lock: None,
+      auth: false,
       machine_reg_maybe: false,
       machine_reg: false,
       evbuf: VecDeque::new(),
@@ -230,6 +230,13 @@ impl Context {
   fn _dump_api_auth_config(&mut self) -> Option<()> {
     // TODO
     None
+  }
+
+  fn _query_api_auth_state(&mut self) -> Option<QueryApiAuthState> {
+    Some(QueryApiAuthState{
+      auth: self.auth,
+      auth_bit: self.root_manifest.auth_bit(),
+    })
   }
 
   fn _reconnect_ws(&mut self) -> Option<()> {
@@ -271,7 +278,7 @@ impl Context {
 
   fn _retry_api_auth(&mut self) -> Option<()> {
     self.auth_maybe = false;
-    self.auth_lock = None;
+    self.auth = false;
     if self.api_cfg.is_none() {
       return None;
     }
@@ -415,12 +422,15 @@ impl Context {
                 writeln!(&mut cfg_file, "{}", toml::ser::to_string_pretty(&new_api_cfg).unwrap()).unwrap();
                 Bot2Ctl::_DumpApiAuthConfig(Some(()))
               }
+              Ctl2Bot::_QueryApiAuthState => {
+                Bot2Ctl::_QueryApiAuthState(self._query_api_auth_state())
+              }
               Ctl2Bot::_RetryApiAuth => {
                 self._reconnect_ws();
                 Bot2Ctl::_RetryApiAuth(self._retry_api_auth())
               }
               Ctl2Bot::_AckRetryApiAuth => {
-                let ack = match (self.auth_maybe, self.auth_lock.is_some()) {
+                let ack = match (self.auth_maybe, self.auth) {
                   (true,  true)  => Ack::Done(()),
                   (false, false) |
                   (true,  false) => Ack::Pending,
@@ -582,41 +592,69 @@ impl Context {
               }
               Registry2BotV0::Auth(Some(_)) => {
                 if !self.auth_maybe {
+                  self.auth = false;
+                  match self.root_manifest.set_auth_bit(false, &self.sysroot) {
+                    Err(_) => continue,
+                    Ok(_) => {}
+                  }
                   continue;
                 }
-                let lock_f = match File::create(self.sysroot.base_dir.join(".auth.lock")) {
+                match self.root_manifest.set_auth_bit(true, &self.sysroot) {
                   Err(_) => {
-                    // Cleanup auth state.
-                    self.auth_maybe = false;
-                    self.auth_lock = None;
+                    self.auth = false;
+                    match self.root_manifest.set_auth_bit(false, &self.sysroot) {
+                      Err(_) => continue,
+                      Ok(_) => {}
+                    }
                     continue;
                   }
-                  Ok(f) => f,
-                };
-                self.auth_lock = Some(lock_f);
+                  Ok(_) => {}
+                }
+                self.auth = true;
               }
               Registry2BotV0::Auth(None) => {
-                // Cleanup auth state.
                 self.auth_maybe = false;
-                self.auth_lock = None;
+                self.auth = false;
+                match self.root_manifest.set_auth_bit(false, &self.sysroot) {
+                  Err(_) => continue,
+                  Ok(_) => {}
+                }
               }
               Registry2BotV0::RegisterCiRepo(Some(rep)) => {
-                // TODO
                 self.evbuf.push_back(Event::RegisterCiRepo(rep));
               }
               Registry2BotV0::RegisterCiRepo(None) => {
-                // TODO
                 self.evbuf.push_back(Event::CancelRegisterCiRepo);
               }
               Registry2BotV0::RegisterMachine(Some(_)) => {
                 if !self.machine_reg_maybe {
+                  self.machine_reg = false;
+                  match self.root_manifest.set_mach_reg_bit(false, &self.sysroot) {
+                    Err(_) => continue,
+                    Ok(_) => {}
+                  }
                   continue;
+                }
+                match self.root_manifest.set_mach_reg_bit(true, &self.sysroot) {
+                  Err(_) => {
+                    self.machine_reg = false;
+                    match self.root_manifest.set_mach_reg_bit(false, &self.sysroot) {
+                      Err(_) => continue,
+                      Ok(_) => {}
+                    }
+                    continue;
+                  }
+                  Ok(_) => {}
                 }
                 self.machine_reg = true;
               }
               Registry2BotV0::RegisterMachine(None) => {
                 self.machine_reg_maybe = false;
                 self.machine_reg = false;
+                match self.root_manifest.set_mach_reg_bit(false, &self.sysroot) {
+                  Err(_) => continue,
+                  Ok(_) => {}
+                }
               }
               _ => {}
             }

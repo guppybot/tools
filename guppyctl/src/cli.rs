@@ -27,9 +27,6 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     .subcommand(SubCommand::with_name("auth")
       .about("Authenticate with guppybot.org")
     )
-    .subcommand(SubCommand::with_name("deauth")
-      .about("Deauthenticate with guppybot.org")
-    )
     /*.subcommand(SubCommand::with_name("echo-api-id")
       .about("Print the registered API identifier")
     )
@@ -44,10 +41,10 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         .help("Debug option: alternative sysroot path. The default sysroot\npath is '/var/lib/guppybot'.")
       )
     )
-    .subcommand(SubCommand::with_name("print-config")
+    /*.subcommand(SubCommand::with_name("print-config")
       .about("Print the currently loaded configuration")
-    )
-    .subcommand(SubCommand::with_name("register-ci-group-machine")
+    )*/
+    /*.subcommand(SubCommand::with_name("register-ci-group-machine")
       .about("Register this machine to provide CI for a group")
       .arg(Arg::with_name("GROUP_ID")
         .index(1)
@@ -67,9 +64,9 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         .required(true)
         .help("The URL to the repository.")
       )
-    )
+    )*/
     .subcommand(SubCommand::with_name("register-ci-machine")
-      .about("Register this machine to provide CI for a repository")
+      .about("Register this machine to run CI tasks for a repository")
       .arg(Arg::with_name("REPOSITORY_URL")
         .index(1)
         .required(true)
@@ -91,6 +88,9 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
       .about("Reload configuration")
     )
     .subcommand(SubCommand::with_name("run")
+      .about("")
+    )
+    .subcommand(SubCommand::with_name("run-local")
       .about("Run a local gup.py script in a local working directory")
       .arg(Arg::with_name("FILE")
         .short("f")
@@ -104,13 +104,22 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         .takes_value(false)
         .help("Make the local working directory mutable, allowing the\ngup.py script to modify the host filesystem.")
       )
-      .arg(Arg::with_name("WORKING_DIR")
+      /*.arg(Arg::with_name("WORKING_DIR")
         .index(1)
         .required(false)
         .help("The local working directory. If not provided, the default\nis the current directory.")
+      )*/
+      .arg(Arg::with_name("WORKING_DIR")
+        .short("d")
+        .long("dir")
+        .takes_value(true)
+        .help("The local working directory. If not provided, the default\nis the current directory.")
       )
     )
-    .subcommand(SubCommand::with_name("unregister-ci-machine")
+    .subcommand(SubCommand::with_name("unauth")
+      .about("Deauthenticate with guppybot.org")
+    )
+    /*.subcommand(SubCommand::with_name("unregister-ci-machine")
       .about("Unregister this machine from providing CI for a repository")
     )
     .subcommand(SubCommand::with_name("unregister-ci-repo")
@@ -118,7 +127,7 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     )
     .subcommand(SubCommand::with_name("unregister-machine")
       .about("Unregister this machine from guppybot.org")
-    )
+    )*/
     /*.subcommand(SubCommand::with_name("x-check-deps")
       .about("Experimental. Check if dependencies are correctly installed")
     )*/
@@ -136,10 +145,10 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
-    ("deauth", Some(_matches)) => {
-      match deauth() {
+    ("unauth", Some(_matches)) => {
+      match unauth() {
         Err(e) => {
-          eprintln!("deauth: {:?}", e);
+          eprintln!("unauth: {:?}", e);
           1
         }
         Ok(_) => 0,
@@ -221,14 +230,14 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
-    ("run", Some(matches)) => {
+    ("run-local", Some(matches)) => {
       let gup_py_path = PathBuf::from(matches.value_of("FILE")
         .unwrap_or_else(|| "gup.py"));
       let mutable = matches.is_present("MUTABLE");
       let working_dir = matches.value_of("WORKING_DIR")
         .map(|s| PathBuf::from(s))
         .or_else(|| current_dir().ok());
-      match run(mutable, gup_py_path, working_dir) {
+      match run_local(mutable, gup_py_path, working_dir) {
         Err(e) => {
           eprintln!("run: {:?}", e);
           1
@@ -364,14 +373,38 @@ fn _retry_api_auth(old_api_id: Option<String>, old_secret_token: Option<String>)
   Ok(())
 }
 
-fn _undo_api_auth() -> Maybe {
-  unimplemented!();
+fn _query_api_auth_state() -> Maybe<(bool, bool)> {
+  let mut auth = false;
+  let mut auth_bit = false;
+  let mut chan = CtlChannel::open_default()?;
+  chan.send(&Ctl2Bot::_QueryApiAuthState)?;
+  match chan.recv()? {
+    Bot2Ctl::_QueryApiAuthState(Some(rep)) => {
+      auth = rep.auth;
+      auth_bit = rep.auth_bit;
+    }
+    Bot2Ctl::_QueryApiAuthState(None) => {
+      return Err(fail("failed to query API authentication state"));
+    }
+    _ => return Err(fail("IPC protocol error")),
+  };
+  chan.hup();
+  Ok((auth, auth_bit))
 }
 
 fn _ensure_api_auth() -> Maybe {
-  _query_api_auth_config()
-    .map(|_| ())
-    .map_err(|e| e.push("missing API authentication details"))
+  let auth = _query_api_auth_state()
+    .and_then(|(auth, auth_bit)| match (auth, auth_bit) {
+      (true,  true) => Ok(true),
+      (false, true) => Ok(false),
+      _ => Err(fail("not authenticated"))
+    })?;
+  if !auth {
+    let (api_id, secret_token) = _query_api_auth_config()?;
+    _retry_api_auth(api_id, secret_token)?;
+    println!("Successfully authenticated.");
+  }
+  Ok(())
 }
 
 pub fn auth() -> Maybe {
@@ -381,19 +414,18 @@ pub fn auth() -> Maybe {
   Ok(())
 }
 
-pub fn deauth() -> Maybe {
+pub fn unauth() -> Maybe {
   let mut chan = CtlChannel::open_default()?;
   chan.send(&Ctl2Bot::_UndoApiAuth)?;
   match chan.recv()? {
     Bot2Ctl::_UndoApiAuth(Some(_)) => {}
     Bot2Ctl::_UndoApiAuth(None) => {
-      return Err(fail("failed to deauthenticate"));
+      return Err(fail("failed to unauthenticate"));
     }
     _ => return Err(fail("IPC protocol error")),
   }
   chan.hup();
-  // TODO
-  println!("Deauthenticated.");
+  println!("Unauthenticated.");
   Ok(())
 }
 
@@ -573,7 +605,7 @@ pub fn reload_config() -> Maybe {
   Ok(())
 }
 
-fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
+fn _run_local(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
   let run_start = Instant::now();
 
   let sysroot = Sysroot::default();
@@ -659,8 +691,8 @@ fn _run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Ma
   Ok(DockerRunStatus::Success)
 }
 
-pub fn run(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
-  match _run(mutable, gup_py_path, working_dir)? {
+pub fn run_local(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
+  match _run_local(mutable, gup_py_path, working_dir)? {
     DockerRunStatus::Success => {
       Ok(())
     }

@@ -3,6 +3,7 @@ use crate::config::{ApiAuth};
 use crate::docker::{DockerImage};
 use crate::query::{Maybe, fail};
 
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use monosodium::{generic_hash};
 use monosodium::util::{CryptoBuf};
 use schemas::v1::{
@@ -12,8 +13,8 @@ use schemas::v1::{
 };
 
 use std::fmt::{Write as FmtWrite};
-use std::fs::{File, Permissions, create_dir_all, set_permissions};
-use std::io::{BufRead, Read, Write, BufReader, BufWriter};
+use std::fs::{File, OpenOptions, Permissions, create_dir_all, set_permissions};
+use std::io::{BufRead, Read, Seek, Write, BufReader, BufWriter, SeekFrom};
 use std::os::unix::fs::{PermissionsExt};
 use std::path::{PathBuf};
 use std::process::{Command};
@@ -436,15 +437,32 @@ impl ImageManifest {
 
 pub struct RootManifest {
   root_key_buf: CryptoBuf,
+  auth_bit: bool,
+  mach_reg_bit: bool,
 }
 
 impl RootManifest {
   fn parse<R: Read>(file: &mut R) -> Maybe<RootManifest> {
-    let mut buf = Vec::with_capacity(32);
-    file.read_to_end(&mut buf)
+    let mut root_key_buf = vec![0; 32];
+    file.read_exact(&mut root_key_buf)
       .map_err(|_| fail("failed to read root manifest"))?;
-    let root_key_buf = CryptoBuf::from_vec(32, buf);
-    Ok(RootManifest{root_key_buf})
+    let root_key_buf = CryptoBuf::from_vec(32, root_key_buf);
+    let flag_bits: u8 = file.read_u8().ok().unwrap_or_else(|| 0_u8);
+    let auth_bit = match flag_bits & 0x01 {
+      0    => false,
+      0x01 => true,
+      _ => unreachable!(),
+    };
+    let mach_reg_bit = match flag_bits & 0x02 {
+      0    => false,
+      0x02 => true,
+      _ => unreachable!(),
+    };
+    Ok(RootManifest{
+      root_key_buf,
+      auth_bit,
+      mach_reg_bit,
+    })
   }
 
   pub fn load(sysroot: &Sysroot) -> Maybe<RootManifest> {
@@ -463,7 +481,13 @@ impl RootManifest {
       .map_err(|_| fail("failed to set permissions on root manifest"))?;
     manifest_file.write_all(root_key_buf.as_ref())
       .map_err(|_| fail("failed to write root manifest"))?;
-    Ok(RootManifest{root_key_buf})
+    manifest_file.write_u8(0_u8)
+      .map_err(|_| fail("failed to write root manifest"))?;
+    Ok(RootManifest{
+      root_key_buf,
+      auth_bit: false,
+      mach_reg_bit: false,
+    })
   }
 
   pub fn key_as_base64(&self) -> String {
@@ -474,6 +498,51 @@ impl RootManifest {
         &mut key_strbuf,
     );
     key_strbuf
+  }
+
+  fn write_flag_bits(&self, sysroot: &Sysroot) -> Maybe {
+    let auth_mask: u8 = match self.auth_bit {
+      false => 0,
+      true  => 0x01,
+    };
+    let mach_reg_mask: u8 = match self.mach_reg_bit {
+      false => 0,
+      true  => 0x02,
+    };
+    let flag_bits = auth_mask | mach_reg_mask;
+    let manifest_path = sysroot.base_dir.join("root");
+    let mut manifest_file = OpenOptions::new()
+      .read(true).write(true)
+      .append(false).truncate(false).create(false)
+      .open(&manifest_path)
+      .map_err(|_| fail("failed to open root manifest"))?;
+    manifest_file.seek(SeekFrom::Start(32))
+      .map_err(|_| fail("failed to write root manifest"))?;
+    manifest_file.write_u8(flag_bits)
+      .map_err(|_| fail("failed to write root manifest"))?;
+    Ok(())
+  }
+
+  pub fn auth_bit(&self) -> bool {
+    self.auth_bit
+  }
+
+  pub fn set_auth_bit(&mut self, bit: bool, sysroot: &Sysroot) -> Maybe<bool> {
+    let prev = self.auth_bit;
+    self.auth_bit = bit;
+    self.write_flag_bits(sysroot)?;
+    Ok(prev)
+  }
+
+  pub fn mach_reg_bit(&self) -> bool {
+    self.mach_reg_bit
+  }
+
+  pub fn set_mach_reg_bit(&mut self, bit: bool, sysroot: &Sysroot) -> Maybe<bool> {
+    let prev = self.mach_reg_bit;
+    self.mach_reg_bit = bit;
+    self.write_flag_bits(sysroot)?;
+    Ok(prev)
   }
 }
 

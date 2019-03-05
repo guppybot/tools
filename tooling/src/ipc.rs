@@ -25,6 +25,7 @@ pub enum Ctl2Bot {
     api_id: String,
     secret_token: String,
   },
+  _QueryApiAuthState,
   _RetryApiAuth,
   _AckRetryApiAuth,
   _UndoApiAuth,
@@ -61,6 +62,7 @@ pub enum Ctl2Bot {
 pub enum Bot2Ctl {
   _QueryApiAuthConfig(Option<QueryApiAuthConfig>),
   _DumpApiAuthConfig(Option<()>),
+  _QueryApiAuthState(Option<QueryApiAuthState>),
   _RetryApiAuth(Option<()>),
   _AckRetryApiAuth(Ack<()>),
   _UndoApiAuth(Option<()>),
@@ -88,6 +90,12 @@ pub enum Bot2Ctl {
 pub struct QueryApiAuthConfig {
   pub api_id: Option<String>,
   pub secret_token: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct QueryApiAuthState {
+  pub auth: bool,
+  pub auth_bit: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
