@@ -64,9 +64,34 @@ pub trait Query {
   fn query() -> Maybe<Self> where Self: Sized;
 }
 
-//pub type DistroId = DistroIdV0;
-//pub type DistroCodename = DistroCodenameV0;
-//pub type DistroInfo = DistroInfoV0;
+impl Query for CpuInfoV0 {
+  fn query() -> Maybe<CpuInfoV0> {
+    let output = Command::new("uname").arg("-m").output()
+      .map_err(|_| fail("failed to run `uname -m`"))?;
+    if !output.status.success() {
+      return Err(fail(format!("`uname -m` failed with exit status {:?}", output.status.code())));
+    }
+    let mut maybe_arch = None;
+    for line in Cursor::new(output.stdout).lines() {
+      let line = line.unwrap();
+      match line.as_ref() {
+        "i386" => maybe_arch = Some(CpuArchV0::I386),
+        "i686" => maybe_arch = Some(CpuArchV0::I686),
+        "ppc64le" => maybe_arch = Some(CpuArchV0::Ppc64Le),
+        "x86_64" => maybe_arch = Some(CpuArchV0::X86_64),
+        _ => {}
+      }
+      break;
+    }
+    if maybe_arch.is_none() {
+      return Err(fail(format!("missing or unexpected `uname -m` output")));
+    }
+    Ok(CpuInfoV0{
+      arch: maybe_arch.unwrap(),
+      num_cpus: num_cpus::get_physical() as u64,
+    })
+  }
+}
 
 fn query_distro_id_lsb_release() -> Maybe<DistroIdV0> {
   let output = Command::new("lsb_release").arg("-is").output()
@@ -152,8 +177,6 @@ impl Query for DistroInfoV0 {
   }
 }
 
-//pub type DriverVersion = DriverVersionV0;
-
 impl Query for DriverVersionV0 {
   fn query() -> Maybe<DriverVersionV0> {
     let file = File::open("/proc/driver/nvidia/version")
@@ -184,9 +207,6 @@ impl Query for DriverVersionV0 {
     Err(fail("no version in /proc/driver/nvidia/version"))
   }
 }
-
-//pub type PciRecord = PciRecordV0;
-//pub type Gpus = GpusV0;
 
 impl Query for GpusV0 {
   fn query() -> Maybe<GpusV0> {
@@ -283,14 +303,12 @@ impl Query for GpusV0 {
   }
 }
 
-//pub type SystemSetup = SystemSetupV0;
-
 impl Query for SystemSetupV0 {
   fn query() -> Maybe<SystemSetupV0> {
     Ok(SystemSetupV0{
+      cpu_info: CpuInfoV0::query()?,
       distro_info: DistroInfoV0::query()?,
       driver_version: DriverVersionV0::query()?,
-      num_cpus: num_cpus::get_physical(),
       gpus: GpusV0::query()?,
     })
   }

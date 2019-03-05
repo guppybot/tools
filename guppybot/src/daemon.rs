@@ -18,7 +18,7 @@ use std::path::{PathBuf};
 use std::thread::{JoinHandle, spawn};
 
 pub fn runloop() -> Maybe {
-  Context::new()?.runloop()
+  Context::new()?._init()?.runloop()
 }
 
 fn base64_str_to_buf(len_bytes: usize, b64_str: &str) -> Option<CryptoBuf> {
@@ -214,9 +214,24 @@ impl Context {
       evbuf: VecDeque::new(),
     })
   }
-}
 
-impl Context {
+  fn _init(&mut self) -> Maybe<&mut Context> {
+    if self._reconnect_reg().is_none() {
+      eprintln!("TRACE: init: failed to connect to registry");
+    }
+    if !self.auth && self.root_manifest.auth_bit() {
+      if self._retry_api_auth().is_none() {
+        eprintln!("TRACE: init: failed to authenticate with registry");
+      }
+    }
+    if !self.machine_reg && self.root_manifest.mach_reg_bit() {
+      if self.register_machine().is_none() {
+        eprintln!("TRACE: init: failed to register machine with registry");
+      }
+    }
+    Ok(self)
+  }
+
   fn _query_api_auth_config(&mut self) -> Option<QueryApiAuthConfig> {
     self.api_cfg.as_ref()
       .map(|api_cfg| {
@@ -239,12 +254,12 @@ impl Context {
     })
   }
 
-  fn _reconnect_ws(&mut self) -> Option<()> {
+  fn _reconnect_reg(&mut self) -> Option<()> {
     if self.api_cfg.is_none() {
       return None;
     }
     if self.reg_conn_join_h.is_some() {
-      eprintln!("warning: reauthenticating on an existing connection");
+      eprintln!("TRACE: reconnecting to registry");
     }
     let api_cfg = self.api_cfg.as_ref().unwrap();
     let reg2bot_s = self.reg2bot_s.clone();
@@ -256,7 +271,7 @@ impl Context {
         }
       }) {
         Err(_) => {
-          eprintln!("Failed to connect to guppybot.org");
+          eprintln!("TRACE: failed to connect to registry");
         }
         Ok(_) => {}
       }
@@ -426,7 +441,7 @@ impl Context {
                 Bot2Ctl::_QueryApiAuthState(self._query_api_auth_state())
               }
               Ctl2Bot::_RetryApiAuth => {
-                self._reconnect_ws();
+                self._reconnect_reg();
                 Bot2Ctl::_RetryApiAuth(self._retry_api_auth())
               }
               Ctl2Bot::_AckRetryApiAuth => {
@@ -599,16 +614,18 @@ impl Context {
                   }
                   continue;
                 }
-                match self.root_manifest.set_auth_bit(true, &self.sysroot) {
-                  Err(_) => {
-                    self.auth = false;
-                    match self.root_manifest.set_auth_bit(false, &self.sysroot) {
-                      Err(_) => continue,
-                      Ok(_) => {}
+                if !self.root_manifest.auth_bit() {
+                  match self.root_manifest.set_auth_bit(true, &self.sysroot) {
+                    Err(_) => {
+                      self.auth = false;
+                      match self.root_manifest.set_auth_bit(false, &self.sysroot) {
+                        Err(_) => continue,
+                        Ok(_) => {}
+                      }
+                      continue;
                     }
-                    continue;
+                    Ok(_) => {}
                   }
-                  Ok(_) => {}
                 }
                 self.auth = true;
               }
@@ -635,16 +652,18 @@ impl Context {
                   }
                   continue;
                 }
-                match self.root_manifest.set_mach_reg_bit(true, &self.sysroot) {
-                  Err(_) => {
-                    self.machine_reg = false;
-                    match self.root_manifest.set_mach_reg_bit(false, &self.sysroot) {
-                      Err(_) => continue,
-                      Ok(_) => {}
+                if !self.root_manifest.mach_reg_bit() {
+                  match self.root_manifest.set_mach_reg_bit(true, &self.sysroot) {
+                    Err(_) => {
+                      self.machine_reg = false;
+                      match self.root_manifest.set_mach_reg_bit(false, &self.sysroot) {
+                        Err(_) => continue,
+                        Ok(_) => {}
+                      }
+                      continue;
                     }
-                    continue;
+                    Ok(_) => {}
                   }
-                  Ok(_) => {}
                 }
                 self.machine_reg = true;
               }

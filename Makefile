@@ -1,11 +1,7 @@
 .PHONY: all install
 
-all: dist/guppyctl
+all:
+	@./x.sh
 
-install: dist/guppyctl
+install:
 	cp dist/guppyctl /usr/local/bin/guppyctl
-
-dist/guppyctl:
-	make -C build
-	mkdir -p dist
-	cp build/guppyctl dist/guppyctl
