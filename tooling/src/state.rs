@@ -120,17 +120,17 @@ impl ImageSpec {
     buf
   }
 
-  pub fn to_toolchain_docker_template_dir(&self) -> PathBuf {
+  pub fn to_toolchain_docker_template_dir(&self, sysroot: &Sysroot) -> PathBuf {
     match &self.toolchain {
-      &None => PathBuf::from("/var/lib/guppybot/docker/default"),
-      &Some(ref tc) => PathBuf::from("/var/lib/guppybot/docker").join(tc.to_desc_string()),
+      &None => sysroot.base_dir.join("docker").join("default"),
+      &Some(ref tc) => sysroot.base_dir.join("docker").join(tc.to_desc_string()),
     }
   }
 
-  pub fn to_toolchain_image_dir(&self) -> PathBuf {
+  pub fn to_toolchain_image_dir(&self, sysroot: &Sysroot) -> PathBuf {
     match &self.toolchain {
-      &None => PathBuf::from("/var/lib/guppybot/images/default"),
-      &Some(ref tc) => PathBuf::from("/var/lib/guppybot/images").join(tc.to_desc_string()),
+      &None => sysroot.base_dir.join("images").join("default"),
+      &Some(ref tc) => sysroot.base_dir.join("images").join(tc.to_desc_string()),
     }
   }
 
@@ -428,7 +428,7 @@ impl ImageManifest {
       imagespec: lookup_image.clone(),
       hash_digest: lookup_image.to_hash_digest(root_manifest),
     };
-    new_docker_image._build(false)?;
+    new_docker_image._build(false, sysroot)?;
     self.imagespecs.push(lookup_image.clone());
     self.dump(sysroot, root_manifest)?;
     Ok(new_docker_image)

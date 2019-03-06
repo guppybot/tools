@@ -11,6 +11,7 @@ use schemas::v1::{
   SystemSetupV0,
 };
 use tempfile::{NamedTempFile, TempDir, tempdir};
+use url::{Url};
 
 use std::env::{current_dir};
 use std::fs::{File, create_dir_all};
@@ -168,9 +169,9 @@ pub struct DockerImage {
 }
 
 impl DockerImage {
-  pub fn _build(&self, fresh: bool) -> Maybe {
-    let toolchain_image_dir = self.imagespec.to_toolchain_image_dir();
-    let toolchain_template_dir = self.imagespec.to_toolchain_docker_template_dir();
+  pub fn _build(&self, fresh: bool, sysroot: &Sysroot) -> Maybe {
+    let toolchain_image_dir = self.imagespec.to_toolchain_image_dir(sysroot);
+    let toolchain_template_dir = self.imagespec.to_toolchain_docker_template_dir(sysroot);
     let distro_toolchain_template_dir = toolchain_template_dir.join(self.imagespec.distro_codename.to_desc_str());
     {
       let src_file = File::open(distro_toolchain_template_dir.join("Dockerfile.template"))
@@ -225,7 +226,51 @@ impl DockerImage {
   }
 
   pub fn _run_checkout(&self, checkout: &GitCheckoutSpec, sysroot: &Sysroot) -> Maybe {
-    unimplemented!();
+    let remote_url = Url::parse(&checkout.remote_url)
+      .map_err(|_| fail("invalid remote URL"))?;
+    let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir(sysroot);
+    let mut cmd = Command::new("docker");
+    cmd
+      .arg("run")
+    ;
+    if self.imagespec.nvidia_docker {
+      cmd.arg("--runtime").arg("nvidia");
+    } else {
+      cmd.arg("--runtime").arg("runc");
+    }
+    cmd
+      .arg("--rm")
+      .arg("--interactive")
+      .arg("--log-driver").arg("none")
+      //.arg("--tty")
+      .arg("--attach").arg("stdin")
+      .arg("--attach").arg("stdout")
+      .arg("--attach").arg("stderr")
+      .arg("--volume").arg(format!("{}:/checkout:rw", checkout.dir.path().display()))
+      .arg("--volume").arg(format!("{}:/entry.sh:ro", toolchain_dir.join("_run_checkout.sh").display()))
+      .arg("--env").arg(format!("GUPPY_GIT_REMOTE_URL={}", remote_url.as_str()))
+      .arg("--env").arg("CI=1")
+      .arg(format!("gup/{}", self.hash_digest))
+      .arg("/entry.sh")
+      .stdout(Stdio::null())
+      .stderr(Stdio::piped())
+    ;
+    let mut proc = cmd.spawn()
+      .map_err(|_| fail("checkout: failed to run `docker run`"))?;
+    if let Some(ref mut stderr) = proc.stderr {
+      let mut buf = String::new();
+      stderr.read_to_string(&mut buf).unwrap();
+      if !(buf.is_empty() || buf == "\n") {
+        proc.wait().ok();
+        return Err(fail("checkout: `docker run` returned nonempty stderr"));
+      }
+    }
+    let status = proc.wait()
+      .map_err(|_| fail("checkout: failed to wait for `docker run`"))?;
+    match status.success() {
+      false => Err(fail("checkout: `docker run` exited with nonzero status")),
+      true  => Ok(())
+    }
   }
 
   pub fn _run_checkout_ssh(&self, checkout: &GitCheckoutSpec, key_path: String, sysroot: &Sysroot) -> Maybe {
@@ -233,11 +278,65 @@ impl DockerImage {
   }
 
   pub fn _run_taskspec(&self, checkout: &GitCheckoutSpec, sysroot: &Sysroot) -> Maybe<Vec<TaskSpec>> {
-    unimplemented!();
+    let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir(sysroot);
+    let mut cmd = Command::new("docker");
+    cmd
+      .arg("run")
+    ;
+    if self.imagespec.nvidia_docker {
+      cmd.arg("--runtime").arg("nvidia");
+    } else {
+      cmd.arg("--runtime").arg("runc");
+    }
+    cmd
+      .arg("--rm")
+      .arg("--interactive")
+      .arg("--log-driver").arg("none")
+      //.arg("--tty")
+      .arg("--attach").arg("stdin")
+      .arg("--attach").arg("stdout")
+      .arg("--attach").arg("stderr")
+      .arg("--volume").arg(format!("{}:/python:ro", sysroot.base_dir.join("python3.6/site-packages").display()))
+      .arg("--volume").arg(format!("{}:/checkout:ro", checkout.dir.path().display()))
+      .arg("--volume").arg(format!("{}:/entry.sh:ro", toolchain_dir.join("_run_taskspec.sh").display()))
+      .arg("--env").arg("PYTHONPATH=/python")
+      .arg("--env").arg("CI=1")
+      .arg(format!("gup/{}", self.hash_digest))
+      .arg("/entry.sh")
+      .stdout(Stdio::piped())
+      .stderr(Stdio::piped())
+    ;
+    let mut proc = cmd.spawn()
+      .map_err(|_| fail("taskspec: failed to run `docker run`"))?;
+    let tasks = if let Some(ref mut stdout) = proc.stdout {
+      match _taskspecs(stdout) {
+        Err(e) => {
+          proc.wait().ok();
+          return Err(e);
+        }
+        Ok(tasks) => tasks,
+      }
+    } else {
+      Vec::new()
+    };
+    if let Some(ref mut stderr) = proc.stderr {
+      let mut buf = String::new();
+      stderr.read_to_string(&mut buf).unwrap();
+      if !(buf.is_empty() || buf == "\n") {
+        proc.wait().ok();
+        return Err(fail("taskspec: `docker run` returned nonempty stderr"));
+      }
+    }
+    let status = proc.wait()
+      .map_err(|_| fail("taskspec: failed to wait for `docker run`"))?;
+    match status.success() {
+      false => Err(fail("taskspec: `docker run` exited with nonzero status")),
+      true  => Ok(tasks)
+    }
   }
 
   pub fn _run_taskspec_direct(&self, gup_py_path: &PathBuf, sysroot: &Sysroot) -> Maybe<Vec<TaskSpec>> {
-    let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir();
+    let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir(sysroot);
     let mut cmd = Command::new("docker");
     cmd
       .arg("run")
@@ -293,8 +392,8 @@ impl DockerImage {
     Ok(tasks)
   }
 
-  pub fn run(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, mut output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
-    let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir();
+  pub fn run(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, sysroot: &Sysroot, mut output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
+    let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir(sysroot);
     // FIXME
     //let distro_toolchain_dir = toolchain_dir.join(self.imagespec.distro_codename.to_desc_str());
     //eprintln!("TRACE: docker image: toolchain dir: {}", toolchain_dir.display());
@@ -367,8 +466,8 @@ impl DockerImage {
     }
   }
 
-  pub fn run_mut(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, mut output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
-    let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir();
+  pub fn run_mut(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, sysroot: &Sysroot, mut output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
+    let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir(sysroot);
     // FIXME
     //let distro_toolchain_dir = toolchain_dir.join(self.imagespec.distro_codename.to_desc_str());
     //eprintln!("TRACE: docker image: toolchain dir: {}", toolchain_dir.display());

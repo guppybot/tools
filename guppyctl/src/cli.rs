@@ -666,8 +666,8 @@ fn _run_local(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>)
     };
     let docker_image = image_manifest.lookup_docker_image(&image, &sysroot, &root_manifest)?;
     let status = match mutable {
-      false => docker_image.run(&checkout, task, None),
-      true  => docker_image.run_mut(&checkout, task, None),
+      false => docker_image.run(&checkout, task, &sysroot, None),
+      true  => docker_image.run_mut(&checkout, task, &sysroot, None),
     }?;
     if let DockerRunStatus::Failure = status {
       // FIXME: display task timing.

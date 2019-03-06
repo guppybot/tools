@@ -7,9 +7,10 @@ use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2Regi
 use serde::{Serialize};
 use serde::de::{DeserializeOwned};
 use tooling::config::{ApiConfig, ApiAuth};
+use tooling::docker::*;
 use tooling::ipc::*;
 use tooling::query::{Maybe, Query, fail};
-use tooling::state::{RootManifest, Sysroot};
+use tooling::state::{ImageSpec, ImageManifest, RootManifest, Sysroot};
 
 use std::collections::{VecDeque};
 use std::fs::{File};
@@ -619,6 +620,46 @@ impl Context {
                 if self.reg_sender.is_none() {
                   continue;
                 }
+                // FIXME: better error handling.
+                let checkout = match GitCheckoutSpec::with_remote_url(repo_clone_url) {
+                  Err(_) => {
+                    eprintln!("TRACE: guppybot: new ci run: git checkout spec failed");
+                    continue;
+                  }
+                  Ok(x) => x,
+                };
+                let mut image_manifest = match ImageManifest::load(&self.sysroot, &self.root_manifest) {
+                  Err(_) => {
+                    eprintln!("TRACE: guppybot: new ci run: image manifest load failed");
+                    continue;
+                  }
+                  Ok(x) => x,
+                };
+                let builtin_imagespec = ImageSpec::builtin_default();
+                let builtin_image = match image_manifest.lookup_docker_image(&builtin_imagespec, &self.sysroot, &self.root_manifest) {
+                  Err(_) => {
+                    eprintln!("TRACE: guppybot: new ci run: image lookup failed");
+                    continue;
+                  }
+                  Ok(x) => x,
+                };
+                match builtin_image._run_checkout(&checkout, &self.sysroot) {
+                  Err(e) => {
+                    eprintln!("TRACE: guppybot: new ci run: checkout failed: {:?}", e);
+                    continue;
+                  }
+                  Ok(_) => {}
+                }
+                let tasks = match builtin_image._run_taskspec(&checkout, &self.sysroot) {
+                  Err(e) => {
+                    eprintln!("TRACE: guppybot: new ci run: taskspec failed: {:?}", e);
+                    continue;
+                  }
+                  Ok(x) => x,
+                };
+                let task_count = tasks.len() as u64;
+                eprintln!("TRACE: guppybot: new ci run: confirmed:");
+                eprintln!("TRACE: guppybot:   task count: {}", task_count);
                 let api_cfg = self.api_cfg.as_ref().unwrap();
                 if self.reg_sender.as_mut().unwrap()
                   .send_auth(
@@ -627,7 +668,7 @@ impl Context {
                         //api_key: api_cfg.auth.api_id.clone(),
                         api_key,
                         ci_run_key,
-                        task_count: Some(0),
+                        task_count: Some(task_count),
                         ts: Some(Utc::now().to_rfc3339()),
                       }))
                   ).is_err()
