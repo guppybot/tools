@@ -75,7 +75,7 @@ pub enum Bot2Ctl {
   RegisterCiGroupRepo(Option<()>),
   AckRegisterCiGroupRepo(Ack<()>),
   RegisterCiMachine(Option<()>),
-  AckRegisterCiMachine(Ack<RegisterCiMachine>),
+  AckRegisterCiMachine(Ack<()>),
   RegisterCiRepo(Option<()>),
   AckRegisterCiRepo(Ack<RegisterCiRepo>),
   RegisterMachine(Option<()>),
@@ -114,9 +114,9 @@ pub struct PrintConfig {
   pub machine_cfg: MachineConfigV0,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/*#[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterCiMachine {
-}
+}*/
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterCiRepo {

@@ -494,15 +494,35 @@ pub fn register_ci_machine(repo_url: Option<&str>) -> Maybe {
   _ensure_api_auth()?;
   let mut chan = CtlChannel::open_default()?;
   chan.send(&Ctl2Bot::RegisterCiMachine{repo_url})?;
-  let res = match chan.recv()? {
-    Bot2Ctl::RegisterCiMachine(res) => res,
+  let rep = match chan.recv()? {
+    Bot2Ctl::RegisterCiMachine(rep) => rep,
     _ => return Err(fail("IPC protocol error")),
   };
   chan.hup();
-  if res.is_none() {
+  if rep.is_none() {
     return Err(fail("failed to register machine with CI repo"));
   }
-  // TODO
+  let backoff = Backoff::new();
+  loop {
+    let mut chan = CtlChannel::open_default()?;
+    chan.send(&Ctl2Bot::AckRegisterCiMachine)?;
+    let msg = chan.recv()?;
+    chan.hup();
+    match msg {
+      Bot2Ctl::AckRegisterCiMachine(Done(_)) => {
+        break;
+      }
+      Bot2Ctl::AckRegisterCiMachine(Pending) => {
+        backoff.snooze();
+        continue;
+      }
+      Bot2Ctl::AckRegisterCiMachine(Stopped) => {
+        return Err(fail("failed to register CI machine"));
+      }
+      _ => return Err(fail("IPC protocol error")),
+    }
+  }
+  println!("Successfully registered machine for repository CI.");
   Ok(())
 }
 

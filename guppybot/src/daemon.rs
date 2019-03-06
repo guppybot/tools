@@ -158,6 +158,8 @@ impl BotWsSender {
 }
 
 enum Event {
+  RegisterCiMachine,
+  CancelRegisterCiMachine,
   RegisterCiRepo(RegisterCiRepoV0),
   CancelRegisterCiRepo,
 }
@@ -320,9 +322,27 @@ impl Context {
     None
   }
 
-  fn register_ci_machine(&mut self) -> Option<()> {
-    // TODO
-    None
+  fn register_ci_machine(&mut self, repo_url: String) -> Option<()> {
+    if self.api_cfg.is_none() {
+      return None;
+    }
+    if self.reg_sender.is_none() {
+      return None;
+    }
+    let api_cfg = self.api_cfg.as_ref().unwrap();
+    if self.reg_sender.as_mut().unwrap()
+      .send_auth(
+          self.api_cfg.as_ref().map(|api| &api.auth),
+          &Bot2RegistryV0::RegisterCiMachine{
+            api_id: api_cfg.auth.api_id.clone(),
+            machine_id: self.root_manifest.key_as_base64(),
+            repo_url: repo_url.clone(),
+          }
+      ).is_err()
+    {
+      return None;
+    }
+    Some(())
   }
 
   fn register_ci_repo(&mut self, repo_url: String) -> Option<()> {
@@ -345,14 +365,6 @@ impl Context {
     {
       return None;
     }
-    // FIXME: record this as a pending request.
-    /*let settings_url = format!("{}/settings/hooks", repo_url);
-    Some(RegisterCiRepo{
-      repo_url,
-      webhook_payload_url: "https://guppybot.org/x/github/longshot".to_string(),
-      webhook_secret: "AAAEEEIIIOOOUUU".to_string(),
-      webhook_settings_url: settings_url,
-    })*/
     Some(())
   }
 
@@ -478,14 +490,29 @@ impl Context {
                 unimplemented!();
               }
               Ctl2Bot::RegisterCiMachine{repo_url} => {
-                // TODO
-                Bot2Ctl::RegisterCiMachine(None)
+                Bot2Ctl::RegisterCiMachine(self.register_ci_machine(repo_url))
+              }
+              Ctl2Bot::AckRegisterCiMachine => {
+                match self.evbuf.pop_front() {
+                  Some(Event::RegisterCiMachine) => {
+                    Bot2Ctl::AckRegisterCiMachine(Done(()))
+                  }
+                  Some(Event::CancelRegisterCiMachine) => {
+                    Bot2Ctl::AckRegisterCiMachine(Stopped)
+                  }
+                  Some(e) => {
+                    self.evbuf.push_front(e);
+                    Bot2Ctl::AckRegisterCiMachine(Pending)
+                  }
+                  None => {
+                    Bot2Ctl::AckRegisterCiMachine(Pending)
+                  }
+                }
               }
               Ctl2Bot::RegisterCiRepo{repo_url} => {
                 Bot2Ctl::RegisterCiRepo(self.register_ci_repo(repo_url))
               }
               Ctl2Bot::AckRegisterCiRepo => {
-                // TODO
                 match self.evbuf.pop_front() {
                   Some(Event::RegisterCiRepo(rep)) => {
                     Bot2Ctl::AckRegisterCiRepo(Done(RegisterCiRepo{
@@ -567,9 +594,21 @@ impl Context {
             match msg {
               Registry2BotV0::_NewCiRun{api_key, ci_run_key, repo_clone_url, originator, ref_full, commit_hash, runspec} => {
                 // TODO
+                let mut api_id = String::new();
+                base64::encode_config_buf(
+                    &api_key,
+                    base64::URL_SAFE,
+                    &mut api_id,
+                );
+                let mut ci_run_id = String::new();
+                base64::encode_config_buf(
+                    &ci_run_key,
+                    base64::URL_SAFE,
+                    &mut ci_run_id,
+                );
                 eprintln!("TRACE: guppybot: new ci run:");
-                eprintln!("TRACE: guppybot:   api key: {:?}", api_key);
-                eprintln!("TRACE: guppybot:   ci run key: {:?}", ci_run_key);
+                eprintln!("TRACE: guppybot:   api id: {:?}", api_id);
+                eprintln!("TRACE: guppybot:   ci run id: {:?}", ci_run_id);
                 eprintln!("TRACE: guppybot:   repo clone url: {:?}", repo_clone_url);
                 eprintln!("TRACE: guppybot:   originator: {:?}", originator);
                 eprintln!("TRACE: guppybot:   ref full: {:?}", ref_full);
@@ -636,6 +675,12 @@ impl Context {
                   Err(_) => continue,
                   Ok(_) => {}
                 }
+              }
+              Registry2BotV0::RegisterCiMachine(Some(())) => {
+                self.evbuf.push_back(Event::RegisterCiMachine);
+              }
+              Registry2BotV0::RegisterCiMachine(None) => {
+                self.evbuf.push_back(Event::CancelRegisterCiMachine);
               }
               Registry2BotV0::RegisterCiRepo(Some(rep)) => {
                 self.evbuf.push_back(Event::RegisterCiRepo(rep));
