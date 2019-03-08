@@ -208,6 +208,17 @@ impl Query for DriverVersionV0 {
   }
 }
 
+impl Query for GpuInfoV0 {
+  fn query() -> Maybe<GpuInfoV0> {
+    // TODO
+    Ok(GpuInfoV0{
+      driver_version: DriverVersionV0::query().ok(),
+      driver_cuda_version: None,
+      toolkit_cuda_version: None,
+    })
+  }
+}
+
 impl Query for GpusV0 {
   fn query() -> Maybe<GpusV0> {
     let output = Command::new("lspci").arg("-vmmn").output()
@@ -308,7 +319,7 @@ impl Query for SystemSetupV0 {
     Ok(SystemSetupV0{
       cpu_info: CpuInfoV0::query()?,
       distro_info: DistroInfoV0::query()?,
-      driver_version: DriverVersionV0::query()?,
+      gpu_info: GpuInfoV0::query()?,
       gpus: GpusV0::query()?,
     })
   }

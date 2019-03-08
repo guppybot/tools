@@ -22,7 +22,7 @@ pub fn runloop() -> Maybe {
   Context::new()?._init()?.runloop()
 }
 
-fn base64_str_to_buf(len_bytes: usize, b64_str: &str) -> Option<CryptoBuf> {
+fn base64_str_to_vec(len_bytes: usize, b64_str: &str) -> Option<Vec<u8>> {
   let mut buf = Vec::with_capacity(len_bytes);
   if base64::decode_config_buf(
       b64_str,
@@ -31,8 +31,16 @@ fn base64_str_to_buf(len_bytes: usize, b64_str: &str) -> Option<CryptoBuf> {
   ).is_err() {
     return None;
   }
-  //Some(buf)
-  Some(CryptoBuf::from_vec(len_bytes, buf))
+  if buf.len() != len_bytes {
+    None
+  } else {
+    Some(buf)
+  }
+}
+
+fn base64_str_to_buf(len_bytes: usize, b64_str: &str) -> Option<CryptoBuf> {
+  base64_str_to_vec(len_bytes, b64_str)
+    .map(|buf| CryptoBuf::from_vec(len_bytes, buf))
 }
 
 enum BotWsMsg {
@@ -308,7 +316,10 @@ impl Context {
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::Auth{
-            api_id: api_cfg.auth.api_id.clone(),
+            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_id) {
+              None => return None,
+              Some(buf) => buf,
+            },
           }
       ).is_err()
     {
@@ -335,8 +346,11 @@ impl Context {
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::RegisterCiMachine{
-            api_id: api_cfg.auth.api_id.clone(),
-            machine_id: self.root_manifest.key_as_base64(),
+            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_id) {
+              None => return None,
+              Some(buf) => buf,
+            },
+            machine_key: self.root_manifest.key_buf().as_vec().clone(),
             repo_url: repo_url.clone(),
           }
       ).is_err()
@@ -358,8 +372,11 @@ impl Context {
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::RegisterCiRepo{
-            api_id: api_cfg.auth.api_id.clone(),
-            group_id: None,
+            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_id) {
+              None => return None,
+              Some(buf) => buf,
+            },
+            group_key: None,
             repo_url: repo_url.clone(),
           }
       ).is_err()
@@ -387,8 +404,11 @@ impl Context {
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::RegisterMachine{
-            api_id: api_cfg.auth.api_id.clone(),
-            machine_id: self.root_manifest.key_as_base64(),
+            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_id) {
+              None => return None,
+              Some(buf) => buf,
+            },
+            machine_key: self.root_manifest.key_buf().as_vec().clone(),
             system_setup: self.system_setup.clone(),
             machine_cfg,
           }
@@ -669,6 +689,7 @@ impl Context {
                         api_key,
                         ci_run_key,
                         task_count: Some(task_count),
+                        failed_early: false,
                         ts: Some(Utc::now().to_rfc3339()),
                       }))
                   ).is_err()

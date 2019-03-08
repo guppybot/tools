@@ -9,7 +9,7 @@ use crate::query::{Maybe, Query, fail};
 use schemas::v1::{
   GpusV0,
   MachineConfigV0, LocalMachineV0, LocalDeviceV0,
-  CiConfigV0, CiRepoV0, CiEventPolicyV0, UserHandleV0, UserDomainV0,
+  //CiConfigV0, CiRepoV0, CiEventPolicyV0, UserHandleV0, UserDomainV0,
 };
 use url::{Url};
 
@@ -172,7 +172,7 @@ impl Query for MachineConfigV0 {
   }
 }
 
-impl Query for CiConfigV0 {
+/*impl Query for CiConfigV0 {
   fn query() -> Maybe<CiConfigV0> {
     let cfg = CiToml::open(&PathBuf::from("/etc/guppybot/ci"))?;
     let mut repos = Vec::new();
@@ -229,7 +229,7 @@ impl Query for CiConfigV0 {
       repos,
     })
   }
-}
+}*/
 
 pub struct Config {
   pub config_dir: PathBuf,

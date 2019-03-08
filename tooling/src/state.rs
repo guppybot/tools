@@ -7,7 +7,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use monosodium::{generic_hash};
 use monosodium::util::{CryptoBuf};
 use schemas::v1::{
-  CudaToolkitVersionV0::{self, *},
+  CudaVersionV0::{self, *},
   DistroIdV0::{self, *},
   DistroCodenameV0::{self, *},
 };
@@ -18,6 +18,26 @@ use std::io::{BufRead, Read, Seek, Write, BufReader, BufWriter, SeekFrom};
 use std::os::unix::fs::{PermissionsExt};
 use std::path::{PathBuf};
 use std::process::{Command};
+
+pub struct Index {
+}
+
+impl Index {
+  pub fn load(sysroot: &Sysroot) -> Maybe<Index> {
+    // TODO
+    unimplemented!();
+  }
+
+  pub fn clone(sysroot: &Sysroot) -> Maybe<Index> {
+    // TODO
+    unimplemented!();
+  }
+
+  pub fn update(&self) -> Maybe {
+    // TODO
+    unimplemented!();
+  }
+}
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Toolchain {
@@ -46,7 +66,7 @@ impl Toolchain {
 
 #[derive(Default)]
 pub struct ImageSpecBuilder {
-  pub cuda: Option<CudaToolkitVersionV0>,
+  pub cuda: Option<CudaVersionV0>,
   pub distro_codename: Option<DistroCodenameV0>,
   pub distro_id: Option<DistroIdV0>,
   pub docker: bool,
@@ -69,7 +89,7 @@ impl ImageSpecBuilder {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ImageSpec {
-  pub cuda: Option<CudaToolkitVersionV0>,
+  pub cuda: Option<CudaVersionV0>,
   pub distro_codename: DistroCodenameV0,
   pub distro_id: DistroIdV0,
   pub docker: bool,
@@ -488,6 +508,10 @@ impl RootManifest {
       auth_bit: false,
       mach_reg_bit: false,
     })
+  }
+
+  pub fn key_buf(&self) -> &CryptoBuf {
+    &self.root_key_buf
   }
 
   pub fn key_as_base64(&self) -> String {

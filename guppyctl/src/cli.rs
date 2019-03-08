@@ -2,7 +2,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use crossbeam_utils::{Backoff};
 use curl::easy::{Easy, List};
 //use monosodium::{sign_verify};
-use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0, CiConfigV0};
+use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0};
 use semver::{Version};
 use serde_json::{Value as JsonValue};
 use tempfile::{NamedTempFile};
@@ -469,10 +469,10 @@ pub fn print_config() -> Maybe {
   // TODO
   let api_cfg = ApiConfig::open_default().ok();
   let machine_cfg = MachineConfigV0::query().ok();
-  let ci_cfg = CiConfigV0::query().ok();
+  //let ci_cfg = CiConfigV0::query().ok();
   println!("API config: {:?}", api_cfg);
   println!("Machine config: {:?}", machine_cfg);
-  println!("CI config: {:?}", ci_cfg);
+  //println!("CI config: {:?}", ci_cfg);
   Ok(())
 }
 

@@ -5,7 +5,7 @@ use crate::state::{ImageSpec, Toolchain, Sysroot};
 //use chrono::prelude::*;
 use crossbeam_channel::{bounded};
 use schemas::v1::{
-  CudaToolkitVersionV0,
+  CudaVersionV0,
   DistroIdV0,
   DistroCodenameV0,
   SystemSetupV0,
@@ -82,7 +82,7 @@ struct TaskSpecBuilder {
   require_docker: bool,
   require_nvidia_docker: bool,
   require_distro: Option<(Version, DistroCodenameV0)>,
-  require_cuda: Option<(Version, Option<CudaToolkitVersionV0>)>,
+  require_cuda: Option<(Version, Option<CudaVersionV0>)>,
   require_gpu_arch: Option<()>,
   allow_errors: bool,
   sh: Vec<String>,
@@ -111,7 +111,7 @@ pub struct TaskSpec {
   pub require_docker: bool,
   pub require_nvidia_docker: bool,
   pub require_distro: (Version, DistroCodenameV0),
-  pub require_cuda: Option<(Version, Option<CudaToolkitVersionV0>)>,
+  pub require_cuda: Option<(Version, Option<CudaVersionV0>)>,
   pub allow_errors: bool,
   pub sh: Vec<String>,
 }
@@ -132,7 +132,7 @@ impl TaskSpec {
             Some(v)
           }
           (Version::Any, None) => {
-            Some(CudaToolkitVersionV0::Cuda10_0)
+            Some(CudaVersionV0::Cuda10_0)
           }
           _ => return None,
         },
@@ -736,14 +736,14 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
                   task_toks[1]
                 };
                 let code = match code_str {
-                  "6.5" => CudaToolkitVersionV0::Cuda6_5,
-                  "7.0" => CudaToolkitVersionV0::Cuda7_0,
-                  "7.5" => CudaToolkitVersionV0::Cuda7_5,
-                  "8.0" => CudaToolkitVersionV0::Cuda8_0,
-                  "9.0" => CudaToolkitVersionV0::Cuda9_0,
-                  "9.1" => CudaToolkitVersionV0::Cuda9_1,
-                  "9.2" => CudaToolkitVersionV0::Cuda9_2,
-                  "10.0" => CudaToolkitVersionV0::Cuda10_0,
+                  "6.5" => CudaVersionV0::Cuda6_5,
+                  "7.0" => CudaVersionV0::Cuda7_0,
+                  "7.5" => CudaVersionV0::Cuda7_5,
+                  "8.0" => CudaVersionV0::Cuda8_0,
+                  "9.0" => CudaVersionV0::Cuda9_0,
+                  "9.1" => CudaVersionV0::Cuda9_1,
+                  "9.2" => CudaVersionV0::Cuda9_2,
+                  "10.0" => CudaVersionV0::Cuda10_0,
                   _ => return Err(fail("v0.task: unsupported cuda version")),
                 };
                 Some(code)
