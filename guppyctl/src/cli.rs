@@ -8,7 +8,7 @@ use serde_json::{Value as JsonValue};
 use tempfile::{NamedTempFile};
 use tooling::config::{Config, ApiConfig};
 use tooling::deps::{DockerDeps, Docker, NvidiaDocker2};
-use tooling::docker::{GitCheckoutSpec, DockerRunStatus};
+use tooling::docker::{GitCheckoutSpec, DockerOutput, DockerRunStatus};
 use tooling::ipc::*;
 use tooling::query::{Maybe, Query, fail};
 use tooling::state::{ImageManifest, ImageSpec, RootManifest, Sysroot};
@@ -87,9 +87,9 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     .subcommand(SubCommand::with_name("reload-config")
       .about("Reload configuration")
     )
-    .subcommand(SubCommand::with_name("run")
+    /*.subcommand(SubCommand::with_name("run")
       .about("")
-    )
+    )*/
     .subcommand(SubCommand::with_name("run-local")
       .about("Run a local gup.py script in a local working directory")
       .arg(Arg::with_name("FILE")
@@ -104,11 +104,18 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         .takes_value(false)
         .help("Make the local working directory mutable, allowing the\ngup.py script to modify the host filesystem.")
       )
-      /*.arg(Arg::with_name("WORKING_DIR")
-        .index(1)
-        .required(false)
-        .help("The local working directory. If not provided, the default\nis the current directory.")
-      )*/
+      .arg(Arg::with_name("STDOUT")
+        .short("O")
+        .long("stdout")
+        .takes_value(false)
+        .help("Log task output to standard output.")
+      )
+      .arg(Arg::with_name("QUIET")
+        .short("q")
+        .long("quiet")
+        .takes_value(false)
+        .help("Quiet mode. Suppress some logging output.")
+      )
       .arg(Arg::with_name("WORKING_DIR")
         .short("d")
         .long("dir")
@@ -234,10 +241,12 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
       let gup_py_path = PathBuf::from(matches.value_of("FILE")
         .unwrap_or_else(|| "gup.py"));
       let mutable = matches.is_present("MUTABLE");
+      let stdout = matches.is_present("STDOUT");
+      let quiet = matches.is_present("QUIET");
       let working_dir = matches.value_of("WORKING_DIR")
         .map(|s| PathBuf::from(s))
         .or_else(|| current_dir().ok());
-      match run_local(mutable, gup_py_path, working_dir) {
+      match run_local(mutable, quiet, stdout, gup_py_path, working_dir) {
         Err(e) => {
           eprintln!("run: {:?}", e);
           1
@@ -625,7 +634,7 @@ pub fn reload_config() -> Maybe {
   Ok(())
 }
 
-fn _run_local(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
+fn _run_local(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
   let run_start = Instant::now();
 
   let sysroot = Sysroot::default();
@@ -645,74 +654,91 @@ fn _run_local(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>)
   assert!(gup_py_path.is_absolute());
   let tasks = builtin_image._run_taskspec_direct(&gup_py_path, &sysroot)?;
   let num_tasks = tasks.len();
-  match num_tasks {
-    0 => {}
-    1 => println!("Running 1 task..."),
-    _ => println!("Running {} tasks...", num_tasks),
+  if !quiet {
+    match num_tasks {
+      0 => {}
+      1 => println!("Running 1 task..."),
+      _ => println!("Running {} tasks...", num_tasks),
+    }
+    stdout().flush().unwrap();
   }
-  stdout().flush().unwrap();
   for (task_idx, task) in tasks.iter().enumerate() {
     // FIXME: sanitize the task name.
     let task_start = Instant::now();
-    print!("Running task {}/{} ({})...", task_idx + 1, num_tasks, task.name);
-    stdout().flush().unwrap();
+    if !quiet {
+      println!("Running task {}/{} ({})...", task_idx + 1, num_tasks, task.name);
+      stdout().flush().unwrap();
+    }
     let image = match task.image_candidate() {
       None => {
-        println!(" NOT STARTED: No matching image candidate.");
-        stdout().flush().unwrap();
+        if !quiet {
+          println!("  NOT STARTED: No matching image candidate.");
+          stdout().flush().unwrap();
+        }
         return Ok(DockerRunStatus::Failure);
       }
       Some(im) => im,
     };
     let docker_image = image_manifest.lookup_docker_image(&image, &sysroot, &root_manifest)?;
+    let output = match stdout_ {
+      false => None,
+      true  => Some(DockerOutput::Stdout),
+    };
     let status = match mutable {
-      false => docker_image.run(&checkout, task, &sysroot, None),
-      true  => docker_image.run_mut(&checkout, task, &sysroot, None),
+      false => docker_image.run(&checkout, task, &sysroot, output),
+      true  => docker_image.run_mut(&checkout, task, &sysroot, output),
     }?;
     if let DockerRunStatus::Failure = status {
-      // FIXME: display task timing.
-      // FIXME: report on the task that failed.
-      let task_end = Instant::now();
-      println!(" FAILED!");
-      stdout().flush().unwrap();
+      if !quiet {
+        // FIXME: display task timing.
+        // FIXME: report on the task that failed.
+        //let task_end = Instant::now();
+        println!("  FAILED");
+        stdout().flush().unwrap();
+      }
       return Ok(status);
     }
-    let task_end = Instant::now();
-    let task_dur = task_end - task_start;
-    let task_ms = task_dur.subsec_millis() as u64;
-    let task_s = task_dur.as_secs() + task_ms / 500;
-    let task_m = task_s / 60;
-    let task_h = task_m / 60;
-    if task_h > 0 {
-      println!(" done (elapsed: {}h {:02}m {:02}s).", task_h, task_m % 60, task_s % 60);
-    } else if task_m > 0 {
-      println!(" done (elapsed: {}m {:02}s).", task_m, task_s % 60);
-    } else {
-      println!(" done (elapsed: {}s).", task_s);
+    if !quiet {
+      let task_end = Instant::now();
+      let task_dur = task_end - task_start;
+      let task_ms = task_dur.subsec_millis() as u64;
+      let task_s = task_dur.as_secs() + task_ms / 500;
+      let task_m = task_s / 60;
+      let task_h = task_m / 60;
+      if task_h > 0 {
+        println!("  Done (elapsed: {}h {:02}m {:02}s).", task_h, task_m % 60, task_s % 60);
+      } else if task_m > 0 {
+        println!("  Done (elapsed: {}m {:02}s).", task_m, task_s % 60);
+      } else {
+        println!("  Done (elapsed: {}s).", task_s);
+      }
+      stdout().flush().unwrap();
     }
-    stdout().flush().unwrap();
   }
 
-  let run_end = Instant::now();
-  print!("All tasks ran successfully");
-  let run_dur = run_end - run_start;
-  let run_ms = run_dur.subsec_millis() as u64;
-  let run_s = run_dur.as_secs() + run_ms / 500;
-  let run_m = run_s / 60;
-  let run_h = run_m / 60;
-  if run_h > 0 {
-    println!(" (elapsed: {}h {:02}m {:02}s).", run_h, run_m % 60, run_s % 60);
-  } else if run_m > 0 {
-    println!(" (elapsed: {}m {:02}s).", run_m, run_s % 60);
-  } else {
-    println!(" (elapsed: {}s).", run_s);
+  if !quiet {
+    print!("All tasks ran successfully");
+    let run_end = Instant::now();
+    let run_dur = run_end - run_start;
+    let run_ms = run_dur.subsec_millis() as u64;
+    let run_s = run_dur.as_secs() + run_ms / 500;
+    let run_m = run_s / 60;
+    let run_h = run_m / 60;
+    if run_h > 0 {
+      println!(" (elapsed: {}h {:02}m {:02}s).", run_h, run_m % 60, run_s % 60);
+    } else if run_m > 0 {
+      println!(" (elapsed: {}m {:02}s).", run_m, run_s % 60);
+    } else {
+      println!(" (elapsed: {}s).", run_s);
+    }
+    stdout().flush().unwrap();
   }
 
   Ok(DockerRunStatus::Success)
 }
 
-pub fn run_local(mutable: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
-  match _run_local(mutable, gup_py_path, working_dir)? {
+pub fn run_local(mutable: bool, quiet: bool, stdout: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
+  match _run_local(mutable, quiet, stdout, gup_py_path, working_dir)? {
     DockerRunStatus::Success => {
       Ok(())
     }

@@ -1,9 +1,11 @@
+use libloading::{Library, Symbol};
 use schemas::v1::*;
 
 use std::fmt::{Debug};
 use std::ffi::{OsStr};
 use std::fs::{File};
 use std::io::{BufRead, BufReader, Cursor};
+use std::os::raw::{c_int};
 use std::path::{PathBuf};
 use std::process::{Command};
 use std::str::{from_utf8};
@@ -208,13 +210,45 @@ impl Query for DriverVersionV0 {
   }
 }
 
+fn parse_cuda_version_int(x: c_int) -> Maybe<CudaVersionV0> {
+  let major = x / 1000;
+  let minor = (x - major * 1000) / 10;
+  CudaVersionV0::from_major_minor(
+      major as _,
+      minor as _,
+  ).ok_or_else(|| fail("unsupported cuda version"))
+}
+
+fn query_driver_cuda_version() -> Maybe<CudaVersionV0> {
+  let lib = Library::new("libcuda.so")
+    .map_err(|_| fail("failed to load 'libcuda.so'"))?;
+  unsafe {
+    let sym: Symbol<unsafe extern "C" fn (driver_version: *mut c_int) -> c_int> =
+        lib.get(b"cuDriverGetVersion")
+          .map_err(|_| fail("failed to get symbol for `cuDriverGetVersion`"))?;
+    let mut v: c_int = -1;
+    match (sym)(&mut v as *mut _) {
+      0 => if v >= 0 {
+        parse_cuda_version_int(v)
+      } else {
+        Err(fail(format!("`cuDriverGetVersion` set invalid version: {}", v)))
+      },
+      e => Err(fail(format!("`cuDriverGetVersion` returned nonzero: {}", e))),
+    }
+  }
+}
+
+fn query_toolkit_cuda_version() -> Maybe<CudaVersionV0> {
+  // TODO
+  Err(fail("unimplemented"))
+}
+
 impl Query for GpuInfoV0 {
   fn query() -> Maybe<GpuInfoV0> {
-    // TODO
     Ok(GpuInfoV0{
       driver_version: DriverVersionV0::query().ok(),
-      driver_cuda_version: None,
-      toolkit_cuda_version: None,
+      driver_cuda_version: query_driver_cuda_version().ok(),
+      toolkit_cuda_version: query_toolkit_cuda_version().ok(),
     })
   }
 }

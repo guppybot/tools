@@ -15,7 +15,7 @@ byteorder = "^1.3"
 chrono = "^0.4"
 crossbeam-channel = "^0.3"
 hex = "^0.3"
-#libloading = "^0.5"
+libloading = "^0.5"
 monosodium = { path = "../../monosodium" }
 num_cpus = "^1.10"
 schemas = { path = "../../schemas" }
