@@ -556,7 +556,7 @@ impl Context {
                 data,
               }).unwrap())}
             };
-            match docker_image.run(&checkout, &task, &shared.sysroot, Some(output)) {
+            let status = match docker_image.run(&checkout, &task, &shared.sysroot, Some(output)) {
               Err(_) => {
                 // TODO
                 loopback_s.send(LoopbackMsg::DoneCiTask{
@@ -569,14 +569,27 @@ impl Context {
               }
               Ok(status) => {
                 eprintln!("TRACE: guppybot: worker:   status: {:?}", status);
+                status
+              }
+            };
+            match status {
+              DockerRunStatus::Failure => {
+                loopback_s.send(LoopbackMsg::DoneCiTask{
+                  api_key,
+                  ci_run_key,
+                  task_nr,
+                  failed: true,
+                }).unwrap();
+              }
+              DockerRunStatus::Success => {
+                loopback_s.send(LoopbackMsg::DoneCiTask{
+                  api_key,
+                  ci_run_key,
+                  task_nr,
+                  failed: false,
+                }).unwrap();
               }
             }
-            loopback_s.send(LoopbackMsg::DoneCiTask{
-              api_key,
-              ci_run_key,
-              task_nr,
-              failed: false,
-            }).unwrap();
           }
         }
       }
