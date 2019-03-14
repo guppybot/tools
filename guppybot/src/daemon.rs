@@ -169,12 +169,32 @@ impl BotWsSender {
 }
 
 enum LoopbackMsg {
-  EnqueueCiTask,
+  StartCiTask{
+    api_key: Vec<u8>,
+    ci_run_key: Vec<u8>,
+    task_nr: u64,
+  },
+  AppendCiTaskData{
+    api_key: Vec<u8>,
+    ci_run_key: Vec<u8>,
+    task_nr: u64,
+    part_nr: u64,
+    key: String,
+    data: Vec<u8>,
+  },
+  DoneCiTask{
+    api_key: Vec<u8>,
+    ci_run_key: Vec<u8>,
+    task_nr: u64,
+    failed: bool,
+  },
 }
 
 enum WorkerLbMsg {
   CiTask{
-    task_idx: u64,
+    api_key: Vec<u8>,
+    ci_run_key: Vec<u8>,
+    task_nr: u64,
     checkout: GitCheckoutSpec,
     task: TaskSpec,
   },
@@ -463,14 +483,25 @@ impl Context {
       loop {
         match workerlb_r.recv() {
           Err(_) => continue,
-          Ok(WorkerLbMsg::CiTask{task_idx, checkout, task}) => {
+          Ok(WorkerLbMsg::CiTask{api_key, ci_run_key, task_nr, checkout, task}) => {
             // FIXME
-            eprintln!("TRACE: guppybot: worker: ci task: {}", task_idx);
+            eprintln!("TRACE: guppybot: worker: ci task: {}", task_nr);
             let shared = shared.read();
+            loopback_s.send(LoopbackMsg::StartCiTask{
+              api_key: api_key.clone(),
+              ci_run_key: ci_run_key.clone(),
+              task_nr,
+            }).unwrap();
             eprintln!("TRACE: guppybot: worker:   get imagespec...");
             let image = match task.image_candidate() {
               None => {
                 // TODO
+                loopback_s.send(LoopbackMsg::DoneCiTask{
+                  api_key: api_key.clone(),
+                  ci_run_key: ci_run_key.clone(),
+                  task_nr,
+                  failed: true,
+                }).unwrap();
                 continue;
               }
               Some(image) => image,
@@ -479,6 +510,12 @@ impl Context {
             let mut image_manifest = match ImageManifest::load(&shared.sysroot, &shared.root_manifest) {
               Err(_) => {
                 // TODO
+                loopback_s.send(LoopbackMsg::DoneCiTask{
+                  api_key: api_key.clone(),
+                  ci_run_key: ci_run_key.clone(),
+                  task_nr,
+                  failed: true,
+                }).unwrap();
                 continue;
               }
               Ok(manifest) => manifest,
@@ -491,19 +528,52 @@ impl Context {
             ) {
               Err(_) => {
                 // TODO
+                loopback_s.send(LoopbackMsg::DoneCiTask{
+                  api_key: api_key.clone(),
+                  ci_run_key: ci_run_key.clone(),
+                  task_nr,
+                  failed: true,
+                }).unwrap();
                 continue;
               }
               Ok(im) => im,
             };
             eprintln!("TRACE: guppybot: worker:   run...");
+            // FIXME: buffered run output.
+            let output = {
+              let loopback_s = loopback_s.clone();
+              let api_key = api_key.clone();
+              let ci_run_key = ci_run_key.clone();
+              DockerOutput::Buffer{buf_sz: 16384, consumer: Box::new(move |part_nr, data| loopback_s.send(LoopbackMsg::AppendCiTaskData{
+                api_key: api_key.clone(),
+                ci_run_key: ci_run_key.clone(),
+                task_nr,
+                part_nr,
+                key: "console".to_string(),
+                data,
+              }).unwrap())}
+            };
             match docker_image.run(&checkout, &task, &shared.sysroot, None) {
               Err(_) => {
                 // TODO
+                loopback_s.send(LoopbackMsg::DoneCiTask{
+                  api_key: api_key.clone(),
+                  ci_run_key: ci_run_key.clone(),
+                  task_nr,
+                  failed: true,
+                }).unwrap();
+                continue;
               }
               Ok(status) => {
                 eprintln!("TRACE: guppybot: worker:   status: {:?}", status);
               }
             }
+            loopback_s.send(LoopbackMsg::DoneCiTask{
+              api_key,
+              ci_run_key,
+              task_nr,
+              failed: false,
+            }).unwrap();
           }
         }
       }
@@ -528,14 +598,23 @@ impl Context {
     let mut reg_sender: Option<BotWsSender> = None;
     loop {
       select! {
-        /*recv(self.loopback_r) -> msg => match msg {
-          Ok(LoopbackMsg::EnqueueCiTask) => {
+        recv(self.loopback_r) -> msg => match msg {
+          Ok(LoopbackMsg::StartCiTask{..}) => {
             // TODO
+            //Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)
+          }
+          Ok(LoopbackMsg::AppendCiTaskData{..}) => {
+            // TODO
+            //Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)
+          }
+          Ok(LoopbackMsg::DoneCiTask{..}) => {
+            // TODO
+            //Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)
           }
           _ => {
             // TODO
           }
-        },*/
+        },
         recv(self.ctlchan_r) -> chan => match chan {
           Err(_) => {}
           Ok(mut chan) => {
@@ -782,8 +861,8 @@ impl Context {
                       self.api_cfg.as_ref().map(|api| &api.auth),
                       &Bot2RegistryV0::_NewCiRun(Some(_NewCiRunV0{
                         //api_key: api_cfg.auth.api_id.clone(),
-                        api_key,
-                        ci_run_key,
+                        api_key: api_key.clone(),
+                        ci_run_key: ci_run_key.clone(),
                         task_count: Some(task_count),
                         failed_early: false,
                         ts: Some(Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)),
@@ -794,20 +873,33 @@ impl Context {
                 }
                 for task_idx in 0 .. task_count {
                   // FIXME
+                  let task_nr = task_idx + 1;
+                  assert!(task_nr != 0);
                   self.workerlb_s.send(WorkerLbMsg::CiTask{
-                    task_idx,
+                    api_key: api_key.clone(),
+                    ci_run_key: ci_run_key.clone(),
+                    task_nr,
                     checkout: checkout.clone(),
                     task: tasks[task_idx as usize].clone(),
                   });
                 }
               }
-              Registry2BotV0::_StartCiTask(_) => {
+              Registry2BotV0::_StartCiTask(Some(_)) => {
                 // TODO
               }
-              Registry2BotV0::_AppendCiTaskData(_) => {
+              Registry2BotV0::_StartCiTask(None) => {
                 // TODO
               }
-              Registry2BotV0::_DoneCiTask(_) => {
+              Registry2BotV0::_AppendCiTaskData(Some(_)) => {
+                // TODO
+              }
+              Registry2BotV0::_AppendCiTaskData(None) => {
+                // TODO
+              }
+              Registry2BotV0::_DoneCiTask(Some(_)) => {
+                // TODO
+              }
+              Registry2BotV0::_DoneCiTask(None) => {
                 // TODO
               }
               Registry2BotV0::Auth(Some(_)) => {

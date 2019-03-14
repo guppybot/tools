@@ -3,7 +3,7 @@ use crate::registry::{RegistryChannel};
 use crate::state::{ImageSpec, Toolchain, Sysroot};
 
 //use chrono::prelude::*;
-use crossbeam_channel::{bounded};
+use crossbeam_channel::{Sender, bounded};
 use schemas::v1::{
   CudaVersionV0,
   DistroIdV0,
@@ -154,8 +154,7 @@ impl TaskSpec {
 
 pub enum DockerOutput {
   Stdout,
-  Chan(RegistryChannel),
-  // FIXME
+  Buffer{buf_sz: usize, consumer: Box<Fn(u64, Vec<u8>) + Send>},
 }
 
 #[derive(Debug)]
@@ -455,9 +454,12 @@ impl DockerImage {
       Some(DockerOutput::Stdout) => {
         ConsoleMonitor::serialize_to_stdout(proc.stdout.take().unwrap(), proc.stderr.take().unwrap())
       }
-      Some(DockerOutput::Chan(mut chan)) => {
-        ConsoleMonitor::serialize_to_channel(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), Some(&mut chan))
+      Some(DockerOutput::Buffer{buf_sz, consumer}) => {
+        ConsoleMonitor::serialize_to_buffer(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), buf_sz, consumer)
       }
+      /*Some(DockerOutput::Chan(mut chan)) => {
+        ConsoleMonitor::serialize_to_channel(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), Some(&mut chan))
+      }*/
     };
     let maybe_status = proc.wait();
     mon_h.join().ok();
@@ -529,9 +531,12 @@ impl DockerImage {
       Some(DockerOutput::Stdout) => {
         ConsoleMonitor::serialize_to_stdout(proc.stdout.take().unwrap(), proc.stderr.take().unwrap())
       }
-      Some(DockerOutput::Chan(mut chan)) => {
-        ConsoleMonitor::serialize_to_channel(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), Some(&mut chan))
+      Some(DockerOutput::Buffer{buf_sz, consumer}) => {
+        ConsoleMonitor::serialize_to_buffer(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), buf_sz, consumer)
       }
+      /*Some(DockerOutput::Chan(mut chan)) => {
+        ConsoleMonitor::serialize_to_channel(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), Some(&mut chan))
+      }*/
     };
     let maybe_status = proc.wait();
     mon_h.join().ok();
@@ -890,7 +895,58 @@ impl ConsoleMonitor {
     MonitorJoin{joins}
   }
 
-  pub fn serialize_to_channel<Stdout, Stderr>(stdout: Stdout, stderr: Stderr, chan: Option<&mut RegistryChannel>) -> MonitorJoin
+  pub fn serialize_to_buffer<Stdout, Stderr>(stdout: Stdout, stderr: Stderr, buf_sz: usize, consumer: Box<Fn(u64, Vec<u8>) + Send>) -> MonitorJoin
+  where Stdout: Read + Send + 'static, Stderr: Read + Send + 'static {
+    // TODO
+    let (stdout_tx, mon_rx) = bounded(64);
+    let stderr_tx = stdout_tx.clone();
+    let joins = vec![
+      thread::spawn(move || {
+        let buf = BufReader::with_capacity(64, stdout);
+        for line in buf.lines() {
+          let line = line.unwrap();
+          stdout_tx.send(line).unwrap();
+        }
+      }),
+      thread::spawn(move || {
+        let buf = BufReader::with_capacity(64, stderr);
+        for line in buf.lines() {
+          let line = line.unwrap();
+          stderr_tx.send(line).unwrap();
+        }
+      }),
+      thread::spawn(move || {
+        let mut buf: Vec<u8> = Vec::with_capacity(buf_sz);
+        let mut occ_sz: usize = 0;
+        let mut part_nr: u64 = 1;
+        loop {
+          match mon_rx.recv() {
+            Err(_) => break,
+            Ok(line) => {
+              buf.extend_from_slice(line.as_bytes());
+              occ_sz += line.len();
+              if occ_sz >= buf_sz {
+                (consumer)(part_nr, buf.clone());
+                buf.clear();
+                occ_sz = 0;
+                part_nr += 1;
+              }
+            }
+          }
+        }
+        if occ_sz > 0 {
+          (consumer)(part_nr, buf.clone());
+          buf.clear();
+          occ_sz = 0;
+          part_nr += 1;
+        }
+        assert_eq!(0, occ_sz);
+      }),
+    ];
+    MonitorJoin{joins}
+  }
+
+  /*pub fn serialize_to_channel<Stdout, Stderr>(stdout: Stdout, stderr: Stderr, chan: Option<&mut RegistryChannel>) -> MonitorJoin
   where Stdout: Read + Send + 'static, Stderr: Read + Send + 'static {
     let (stdout_tx, mon_rx) = bounded(64);
     let stderr_tx = stdout_tx.clone();
@@ -922,5 +978,5 @@ impl ConsoleMonitor {
       }),
     ];
     MonitorJoin{joins}
-  }
+  }*/
 }
