@@ -173,6 +173,8 @@ enum LoopbackMsg {
     api_key: Vec<u8>,
     ci_run_key: Vec<u8>,
     task_nr: u64,
+    task_name: Option<String>,
+    taskspec: Option<Vec<u8>>,
   },
   AppendCiTaskData{
     api_key: Vec<u8>,
@@ -484,13 +486,15 @@ impl Context {
         match workerlb_r.recv() {
           Err(_) => continue,
           Ok(WorkerLbMsg::CiTask{api_key, ci_run_key, task_nr, checkout, task}) => {
-            // FIXME
+            // TODO
             eprintln!("TRACE: guppybot: worker: ci task: {}", task_nr);
             let shared = shared.read();
             loopback_s.send(LoopbackMsg::StartCiTask{
               api_key: api_key.clone(),
               ci_run_key: ci_run_key.clone(),
               task_nr,
+              task_name: Some(task.name.clone()),
+              taskspec: None,
             }).unwrap();
             eprintln!("TRACE: guppybot: worker:   get imagespec...");
             let image = match task.image_candidate() {
@@ -539,7 +543,6 @@ impl Context {
               Ok(im) => im,
             };
             eprintln!("TRACE: guppybot: worker:   run...");
-            // FIXME: buffered run output.
             let output = {
               let loopback_s = loopback_s.clone();
               let api_key = api_key.clone();
@@ -553,7 +556,7 @@ impl Context {
                 data,
               }).unwrap())}
             };
-            match docker_image.run(&checkout, &task, &shared.sysroot, None) {
+            match docker_image.run(&checkout, &task, &shared.sysroot, Some(output)) {
               Err(_) => {
                 // TODO
                 loopback_s.send(LoopbackMsg::DoneCiTask{
@@ -599,26 +602,72 @@ impl Context {
     loop {
       select! {
         recv(self.loopback_r) -> msg => match msg {
-          Ok(LoopbackMsg::StartCiTask{..}) => {
-            // TODO
-            //Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)
+          Err(_) => {}
+          Ok(LoopbackMsg::StartCiTask{api_key, ci_run_key, task_nr, task_name, taskspec}) => {
+            if self.reg_sender.is_none() {
+              continue;
+            }
+            if self.reg_sender.as_mut().unwrap()
+              .send_auth(
+                  self.api_cfg.as_ref().map(|api| &api.auth),
+                  &Bot2RegistryV0::_StartCiTask{
+                    api_key,
+                    machine_key: self.shared.read().root_manifest.key_buf().as_vec().clone(),
+                    ci_run_key,
+                    task_nr,
+                    task_name,
+                    taskspec,
+                    ts: Some(Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)),
+                  }
+              ).is_err()
+            {
+              continue;
+            }
           }
-          Ok(LoopbackMsg::AppendCiTaskData{..}) => {
-            // TODO
-            //Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)
+          Ok(LoopbackMsg::AppendCiTaskData{api_key, ci_run_key, task_nr, part_nr, key, data}) => {
+            if self.reg_sender.is_none() {
+              continue;
+            }
+            if self.reg_sender.as_mut().unwrap()
+              .send_auth(
+                  self.api_cfg.as_ref().map(|api| &api.auth),
+                  &Bot2RegistryV0::_AppendCiTaskData{
+                    api_key,
+                    ci_run_key,
+                    task_nr,
+                    part_nr,
+                    ts: Some(Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)),
+                    key,
+                    data,
+                  }
+              ).is_err()
+            {
+              continue;
+            }
           }
-          Ok(LoopbackMsg::DoneCiTask{..}) => {
-            // TODO
-            //Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)
-          }
-          _ => {
-            // TODO
+          Ok(LoopbackMsg::DoneCiTask{api_key, ci_run_key, task_nr, failed}) => {
+            if self.reg_sender.is_none() {
+              continue;
+            }
+            if self.reg_sender.as_mut().unwrap()
+              .send_auth(
+                  self.api_cfg.as_ref().map(|api| &api.auth),
+                  &Bot2RegistryV0::_DoneCiTask{
+                    api_key,
+                    ci_run_key,
+                    task_nr,
+                    failed,
+                    ts: Some(Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)),
+                  }
+              ).is_err()
+            {
+              continue;
+            }
           }
         },
         recv(self.ctlchan_r) -> chan => match chan {
           Err(_) => {}
           Ok(mut chan) => {
-            // TODO
             //eprintln!("TRACE: guppybot: accept ipc conn");
             let recv_msg: Ctl2Bot = match chan.recv() {
               Err(_) => continue,
@@ -788,7 +837,6 @@ impl Context {
             };
             match msg {
               Registry2BotV0::_NewCiRun{api_key, ci_run_key, repo_clone_url, originator, ref_full, commit_hash, runspec} => {
-                // TODO
                 let mut api_id = String::new();
                 base64::encode_config_buf(
                     &api_key,
@@ -801,6 +849,7 @@ impl Context {
                     base64::URL_SAFE,
                     &mut ci_run_id,
                 );
+                // TODO: logging verbosity.
                 eprintln!("TRACE: guppybot: new ci run:");
                 eprintln!("TRACE: guppybot:   api id: {:?}", api_id);
                 eprintln!("TRACE: guppybot:   ci run id: {:?}", ci_run_id);

@@ -924,7 +924,8 @@ impl ConsoleMonitor {
             Err(_) => break,
             Ok(line) => {
               buf.extend_from_slice(line.as_bytes());
-              occ_sz += line.len();
+              buf.push(b'\n');
+              occ_sz += line.len() + 1;
               if occ_sz >= buf_sz {
                 (consumer)(part_nr, buf.clone());
                 buf.clear();
