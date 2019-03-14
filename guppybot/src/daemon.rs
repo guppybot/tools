@@ -1,8 +1,9 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-use chrono::{Utc};
+use chrono::{SecondsFormat, Utc};
 use crossbeam_channel::{Sender, Receiver, unbounded};
 use monosodium::{auth_sign, auth_verify};
 use monosodium::util::{CryptoBuf};
+use parking_lot::{RwLock};
 use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2RegistryV0, Registry2BotV0, _NewCiRunV0, RegisterCiRepoV0};
 use serde::{Serialize};
 use serde::de::{DeserializeOwned};
@@ -16,6 +17,7 @@ use std::collections::{VecDeque};
 use std::fs::{File};
 use std::io::{Read, Write, Cursor};
 use std::path::{PathBuf};
+use std::sync::{Arc};
 use std::thread::{JoinHandle, spawn};
 
 pub fn runloop() -> Maybe {
@@ -166,6 +168,18 @@ impl BotWsSender {
   }
 }
 
+enum LoopbackMsg {
+  EnqueueCiTask,
+}
+
+enum WorkerLbMsg {
+  CiTask{
+    task_idx: u64,
+    checkout: GitCheckoutSpec,
+    task: TaskSpec,
+  },
+}
+
 enum Event {
   RegisterCiMachine,
   CancelRegisterCiMachine,
@@ -173,12 +187,22 @@ enum Event {
   CancelRegisterCiRepo,
 }
 
-struct Context {
+struct Shared {
   sysroot: Sysroot,
   root_manifest: RootManifest,
+}
+
+struct Context {
+  shared: Arc<RwLock<Shared>>,
+  //sysroot: Sysroot,
+  //root_manifest: RootManifest,
   system_setup: SystemSetupV0,
   api_cfg: Option<ApiConfig>,
   machine_cfg: Option<MachineConfigV0>,
+  loopback_r: Receiver<LoopbackMsg>,
+  loopback_s: Sender<LoopbackMsg>,
+  workerlb_r: Receiver<WorkerLbMsg>,
+  workerlb_s: Sender<WorkerLbMsg>,
   ctlchan_r: Receiver<CtlChannel>,
   ctlchan_s: Sender<CtlChannel>,
   reg2bot_r: Receiver<BotWsMsg>,
@@ -190,6 +214,7 @@ struct Context {
   machine_reg_maybe: bool,
   machine_reg: bool,
   evbuf: VecDeque<Event>,
+  // TODO: CI task state.
 }
 
 impl Context {
@@ -204,14 +229,22 @@ impl Context {
     eprintln!("TRACE: api cfg: {:?}", api_cfg);
     let machine_cfg = MachineConfigV0::query().ok();
     eprintln!("TRACE: machine cfg: {:?}", machine_cfg);
+    let (loopback_s, loopback_r) = unbounded();
+    let (workerlb_s, workerlb_r) = unbounded();
     let (ctlchan_s, ctlchan_r) = unbounded();
     let (reg2bot_s, reg2bot_r) = unbounded();
     Ok(Context{
-      sysroot,
-      root_manifest,
+      shared: Arc::new(RwLock::new(Shared{
+        sysroot,
+        root_manifest,
+      })),
       system_setup,
       api_cfg,
       machine_cfg,
+      loopback_r,
+      loopback_s,
+      workerlb_r,
+      workerlb_s,
       ctlchan_r,
       ctlchan_s,
       reg2bot_r,
@@ -230,12 +263,12 @@ impl Context {
     if self._reconnect_reg().is_none() {
       eprintln!("TRACE: init: failed to connect to registry");
     }
-    if !self.auth && self.root_manifest.auth_bit() {
+    if !self.auth && self.shared.read().root_manifest.auth_bit() {
       if self._retry_api_auth().is_none() {
         eprintln!("TRACE: init: failed to authenticate with registry");
       }
     }
-    if !self.machine_reg && self.root_manifest.mach_reg_bit() {
+    if !self.machine_reg && self.shared.read().root_manifest.mach_reg_bit() {
       if self.register_machine().is_none() {
         eprintln!("TRACE: init: failed to register machine with registry");
       }
@@ -261,7 +294,7 @@ impl Context {
   fn _query_api_auth_state(&mut self) -> Option<QueryApiAuthState> {
     Some(QueryApiAuthState{
       auth: self.auth,
-      auth_bit: self.root_manifest.auth_bit(),
+      auth_bit: self.shared.read().root_manifest.auth_bit(),
     })
   }
 
@@ -350,7 +383,7 @@ impl Context {
               None => return None,
               Some(buf) => buf,
             },
-            machine_key: self.root_manifest.key_buf().as_vec().clone(),
+            machine_key: self.shared.read().root_manifest.key_buf().as_vec().clone(),
             repo_url: repo_url.clone(),
           }
       ).is_err()
@@ -408,7 +441,7 @@ impl Context {
               None => return None,
               Some(buf) => buf,
             },
-            machine_key: self.root_manifest.key_buf().as_vec().clone(),
+            machine_key: self.shared.read().root_manifest.key_buf().as_vec().clone(),
             system_setup: self.system_setup.clone(),
             machine_cfg,
           }
@@ -421,6 +454,60 @@ impl Context {
   }
 
   pub fn runloop(&mut self) -> Maybe {
+    let shared = self.shared.clone();
+    let loopback_s = self.loopback_s.clone();
+    let workerlb_r = self.workerlb_r.clone();
+    let worker_join_h = spawn(move || {
+      let shared = shared;
+      let loopback_s = loopback_s;
+      loop {
+        match workerlb_r.recv() {
+          Err(_) => continue,
+          Ok(WorkerLbMsg::CiTask{task_idx, checkout, task}) => {
+            // FIXME
+            eprintln!("TRACE: guppybot: worker: ci task: {}", task_idx);
+            let shared = shared.read();
+            eprintln!("TRACE: guppybot: worker:   get imagespec...");
+            let image = match task.image_candidate() {
+              None => {
+                // TODO
+                continue;
+              }
+              Some(image) => image,
+            };
+            eprintln!("TRACE: guppybot: worker:   load manifest...");
+            let mut image_manifest = match ImageManifest::load(&shared.sysroot, &shared.root_manifest) {
+              Err(_) => {
+                // TODO
+                continue;
+              }
+              Ok(manifest) => manifest,
+            };
+            eprintln!("TRACE: guppybot: worker:   lookup docker image...");
+            let docker_image = match image_manifest.lookup_docker_image(
+                &image,
+                &shared.sysroot,
+                &shared.root_manifest,
+            ) {
+              Err(_) => {
+                // TODO
+                continue;
+              }
+              Ok(im) => im,
+            };
+            eprintln!("TRACE: guppybot: worker:   run...");
+            match docker_image.run(&checkout, &task, &shared.sysroot, None) {
+              Err(_) => {
+                // TODO
+              }
+              Ok(status) => {
+                eprintln!("TRACE: guppybot: worker:   status: {:?}", status);
+              }
+            }
+          }
+        }
+      }
+    });
     let ctlchan_s = self.ctlchan_s.clone();
     let ctl_server_join_h = spawn(move || {
       let ctl_server = match CtlListener::open_default() {
@@ -441,6 +528,14 @@ impl Context {
     let mut reg_sender: Option<BotWsSender> = None;
     loop {
       select! {
+        /*recv(self.loopback_r) -> msg => match msg {
+          Ok(LoopbackMsg::EnqueueCiTask) => {
+            // TODO
+          }
+          _ => {
+            // TODO
+          }
+        },*/
         recv(self.ctlchan_r) -> chan => match chan {
           Err(_) => {}
           Ok(mut chan) => {
@@ -641,6 +736,7 @@ impl Context {
                   continue;
                 }
                 // FIXME: better error handling.
+                let shared = self.shared.read();
                 let checkout = match GitCheckoutSpec::with_remote_url(repo_clone_url) {
                   Err(_) => {
                     eprintln!("TRACE: guppybot: new ci run: git checkout spec failed");
@@ -648,7 +744,7 @@ impl Context {
                   }
                   Ok(x) => x,
                 };
-                let mut image_manifest = match ImageManifest::load(&self.sysroot, &self.root_manifest) {
+                let mut image_manifest = match ImageManifest::load(&shared.sysroot, &shared.root_manifest) {
                   Err(_) => {
                     eprintln!("TRACE: guppybot: new ci run: image manifest load failed");
                     continue;
@@ -656,21 +752,21 @@ impl Context {
                   Ok(x) => x,
                 };
                 let builtin_imagespec = ImageSpec::builtin_default();
-                let builtin_image = match image_manifest.lookup_docker_image(&builtin_imagespec, &self.sysroot, &self.root_manifest) {
+                let builtin_image = match image_manifest.lookup_docker_image(&builtin_imagespec, &shared.sysroot, &shared.root_manifest) {
                   Err(_) => {
                     eprintln!("TRACE: guppybot: new ci run: image lookup failed");
                     continue;
                   }
                   Ok(x) => x,
                 };
-                match builtin_image._run_checkout(&checkout, &self.sysroot) {
+                match builtin_image._run_checkout(&checkout, &shared.sysroot) {
                   Err(e) => {
                     eprintln!("TRACE: guppybot: new ci run: checkout failed: {:?}", e);
                     continue;
                   }
                   Ok(_) => {}
                 }
-                let tasks = match builtin_image._run_taskspec(&checkout, &self.sysroot) {
+                let tasks = match builtin_image._run_taskspec(&checkout, &shared.sysroot) {
                   Err(e) => {
                     eprintln!("TRACE: guppybot: new ci run: taskspec failed: {:?}", e);
                     continue;
@@ -690,11 +786,19 @@ impl Context {
                         ci_run_key,
                         task_count: Some(task_count),
                         failed_early: false,
-                        ts: Some(Utc::now().to_rfc3339()),
+                        ts: Some(Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, false)),
                       }))
                   ).is_err()
                 {
                   continue;
+                }
+                for task_idx in 0 .. task_count {
+                  // FIXME
+                  self.workerlb_s.send(WorkerLbMsg::CiTask{
+                    task_idx,
+                    checkout: checkout.clone(),
+                    task: tasks[task_idx as usize].clone(),
+                  });
                 }
               }
               Registry2BotV0::_StartCiTask(_) => {
@@ -707,19 +811,21 @@ impl Context {
                 // TODO
               }
               Registry2BotV0::Auth(Some(_)) => {
+                let mut shared = self.shared.write();
+                let &mut Shared{ref sysroot, ref mut root_manifest, ..} = &mut *shared;
                 if !self.auth_maybe {
                   self.auth = false;
-                  match self.root_manifest.set_auth_bit(false, &self.sysroot) {
+                  match root_manifest.set_auth_bit(false, sysroot) {
                     Err(_) => continue,
                     Ok(_) => {}
                   }
                   continue;
                 }
-                if !self.root_manifest.auth_bit() {
-                  match self.root_manifest.set_auth_bit(true, &self.sysroot) {
+                if !root_manifest.auth_bit() {
+                  match root_manifest.set_auth_bit(true, sysroot) {
                     Err(_) => {
                       self.auth = false;
-                      match self.root_manifest.set_auth_bit(false, &self.sysroot) {
+                      match root_manifest.set_auth_bit(false, sysroot) {
                         Err(_) => continue,
                         Ok(_) => {}
                       }
@@ -731,9 +837,11 @@ impl Context {
                 self.auth = true;
               }
               Registry2BotV0::Auth(None) => {
+                let mut shared = self.shared.write();
+                let &mut Shared{ref sysroot, ref mut root_manifest, ..} = &mut *shared;
                 self.auth_maybe = false;
                 self.auth = false;
-                match self.root_manifest.set_auth_bit(false, &self.sysroot) {
+                match root_manifest.set_auth_bit(false, sysroot) {
                   Err(_) => continue,
                   Ok(_) => {}
                 }
@@ -751,19 +859,21 @@ impl Context {
                 self.evbuf.push_back(Event::CancelRegisterCiRepo);
               }
               Registry2BotV0::RegisterMachine(Some(_)) => {
+                let mut shared = self.shared.write();
+                let &mut Shared{ref sysroot, ref mut root_manifest, ..} = &mut *shared;
                 if !self.machine_reg_maybe {
                   self.machine_reg = false;
-                  match self.root_manifest.set_mach_reg_bit(false, &self.sysroot) {
+                  match root_manifest.set_mach_reg_bit(false, sysroot) {
                     Err(_) => continue,
                     Ok(_) => {}
                   }
                   continue;
                 }
-                if !self.root_manifest.mach_reg_bit() {
-                  match self.root_manifest.set_mach_reg_bit(true, &self.sysroot) {
+                if !root_manifest.mach_reg_bit() {
+                  match root_manifest.set_mach_reg_bit(true, sysroot) {
                     Err(_) => {
                       self.machine_reg = false;
-                      match self.root_manifest.set_mach_reg_bit(false, &self.sysroot) {
+                      match root_manifest.set_mach_reg_bit(false, sysroot) {
                         Err(_) => continue,
                         Ok(_) => {}
                       }
@@ -775,9 +885,11 @@ impl Context {
                 self.machine_reg = true;
               }
               Registry2BotV0::RegisterMachine(None) => {
+                let mut shared = self.shared.write();
+                let &mut Shared{ref sysroot, ref mut root_manifest, ..} = &mut *shared;
                 self.machine_reg_maybe = false;
                 self.machine_reg = false;
-                match self.root_manifest.set_mach_reg_bit(false, &self.sysroot) {
+                match root_manifest.set_mach_reg_bit(false, sysroot) {
                   Err(_) => continue,
                   Ok(_) => {}
                 }
@@ -795,6 +907,7 @@ impl Context {
         }
       }
     }
+    worker_join_h.join().ok();
     ctl_server_join_h.join().ok();
     if let Some(h) = reg_conn_join_h {
       h.join().ok();

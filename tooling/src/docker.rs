@@ -20,11 +20,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::str::{from_utf8};
+use std::sync::{Arc};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Dir {
   Path(PathBuf),
-  Temp(TempDir),
+  Temp(Arc<TempDir>),
 }
 
 impl Dir {
@@ -36,7 +37,7 @@ impl Dir {
   }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct GitCheckoutSpec {
   pub remote_url: String,
   pub dir: Dir,
@@ -63,7 +64,7 @@ impl GitCheckoutSpec {
   pub fn with_remote_url(remote_url: String) -> Maybe<GitCheckoutSpec> {
     Ok(GitCheckoutSpec{
       remote_url,
-      dir: Dir::Temp(tempdir().map_err(|_| fail("failed to create temp dir"))?),
+      dir: Dir::Temp(Arc::new(tempdir().map_err(|_| fail("failed to create temp dir"))?)),
     })
   }
 }
@@ -104,7 +105,7 @@ impl TaskSpecBuilder {
   }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TaskSpec {
   pub name: String,
   pub toolchain: Option<Toolchain>,
@@ -154,8 +155,10 @@ impl TaskSpec {
 pub enum DockerOutput {
   Stdout,
   Chan(RegistryChannel),
+  // FIXME
 }
 
+#[derive(Debug)]
 pub enum DockerRunStatus {
   Success,
   Failure,
@@ -381,6 +384,7 @@ impl DockerImage {
       let mut buf = String::new();
       stderr.read_to_string(&mut buf).unwrap();
       if !(buf.is_empty() || buf == "\n") {
+        println!("{}", buf);
         return Err(fail("docker taskspec run returned nonempty stderr"));
       }
       /*println!("### BEGIN STDERR ###");
