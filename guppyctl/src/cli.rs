@@ -90,7 +90,7 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     /*.subcommand(SubCommand::with_name("run")
       .about("")
     )*/
-    .subcommand(SubCommand::with_name("run-local")
+    .subcommand(SubCommand::with_name("run")
       .about("Run a local gup.py script in a local working directory")
       .arg(Arg::with_name("FILE")
         .short("f")
@@ -237,16 +237,20 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
-    ("run-local", Some(matches)) => {
-      let gup_py_path = PathBuf::from(matches.value_of("FILE")
-        .unwrap_or_else(|| "gup.py"));
+    ("run", Some(matches)) => {
       let mutable = matches.is_present("MUTABLE");
       let stdout = matches.is_present("STDOUT");
       let quiet = matches.is_present("QUIET");
       let working_dir = matches.value_of("WORKING_DIR")
         .map(|s| PathBuf::from(s))
         .or_else(|| current_dir().ok());
-      match run_local(mutable, quiet, stdout, gup_py_path, working_dir) {
+      let gup_py_path = matches.value_of("FILE")
+        .map(|s| PathBuf::from(s))
+        .unwrap_or_else(|| match &working_dir {
+          &None => PathBuf::from("gup.py"),
+          &Some(ref p) => p.join("gup.py"),
+        });
+      match run(mutable, quiet, stdout, gup_py_path, working_dir) {
         Err(e) => {
           eprintln!("run: {:?}", e);
           1
@@ -254,20 +258,30 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
-    ("unregister-ci-machine", Some(matches)) => {
+    /*("unregister-ci-machine", Some(matches)) => {
       // TODO
-      unimplemented!();
+      eprintln!("unregister-ci-machine: not implemented yet!");
+      0
     }
     ("unregister-ci-repo", Some(matches)) => {
       // TODO
-      unimplemented!();
+      eprintln!("unregister-ci-repo: not implemented yet!");
+      0
     }
     ("unregister-machine", Some(matches)) => {
       // TODO
-      unimplemented!();
-    }
+      eprintln!("unregister-machine: not implemented yet!");
+      0
+    }*/
+    /*("update-self", Some(matches)) => {
+      // TODO
+      eprintln!("update-self: not implemented yet!");
+      0
+    }*/
     /*("x-check-deps", Some(matches)) => {
-      unimplemented!();
+      // TODO
+      eprintln!("x-check-deps: not implemented yet!");
+      0
     }*/
     ("x-install-deps", Some(_matches)) => {
       match install_deps() {
@@ -634,7 +648,7 @@ pub fn reload_config() -> Maybe {
   Ok(())
 }
 
-fn _run_local(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
+fn _run(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
   let run_start = Instant::now();
 
   let sysroot = Sysroot::default();
@@ -696,7 +710,7 @@ fn _run_local(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, w
         println!("  FAILED");
         stdout().flush().unwrap();
       }
-      return Ok(status);
+      return Ok(DockerRunStatus::Failure);
     }
     if !quiet {
       let task_end = Instant::now();
@@ -737,8 +751,8 @@ fn _run_local(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, w
   Ok(DockerRunStatus::Success)
 }
 
-pub fn run_local(mutable: bool, quiet: bool, stdout: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
-  match _run_local(mutable, quiet, stdout, gup_py_path, working_dir)? {
+pub fn run(mutable: bool, quiet: bool, stdout: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
+  match _run(mutable, quiet, stdout, gup_py_path, working_dir)? {
     DockerRunStatus::Success => {
       Ok(())
     }
