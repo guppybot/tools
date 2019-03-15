@@ -3,6 +3,7 @@ name = "tooling"
 version = "0.0.0"
 edition = "2018"
 authors = ["Peter Jin <peter@guppybot.org>"]
+license = "MIT OR Apache-2.0"
 workspace = "../tools"
 
 [build-dependencies]
