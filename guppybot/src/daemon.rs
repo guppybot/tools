@@ -4,9 +4,9 @@ use crossbeam_channel::{Sender, Receiver, unbounded};
 use monosodium::{auth_sign, auth_verify};
 use monosodium::util::{CryptoBuf};
 use parking_lot::{RwLock};
+use schemas::{Revise, deserialize_revision, serialize_revision_into};
 use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2RegistryV0, Registry2BotV0, _NewCiRunV0, RegisterCiRepoV0};
-use serde::{Serialize};
-use serde::de::{DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use tooling::config::{ApiConfig, ApiAuth};
 use tooling::docker::*;
 use tooling::ipc::*;
@@ -102,7 +102,7 @@ struct BotWsSender {
 }
 
 impl BotWsSender {
-  pub fn send_auth<T: Serialize>(&mut self, auth: Option<&ApiAuth>, msg: &T) -> Maybe {
+  pub fn send_auth<'a, T: Revise<'a> + Serialize>(&mut self, auth: Option<&ApiAuth>, msg: &'a T) -> Maybe {
     if self.secret_token_buf.is_none() {
       //if api_cfg.is_none() {
       if auth.is_none() {
@@ -116,10 +116,9 @@ impl BotWsSender {
       }
     }
     let mut bin: Vec<u8> = Vec::with_capacity(64);
-    bin.resize(32, 0_u8);
-    bin.write_u32::<LittleEndian>(0).unwrap();
+    bin.resize(36, 0_u8);
     assert_eq!(36, bin.len());
-    bincode::serialize_into(&mut bin, msg).unwrap();
+    serialize_revision_into(&mut bin, msg).unwrap();
     assert!(36 <= bin.len());
     let msg_bin_len = bin.len() - 36;
     assert!(msg_bin_len <= u32::max_value() as usize);
@@ -137,7 +136,7 @@ impl BotWsSender {
     Ok(())
   }
 
-  pub fn recv_auth<T: DeserializeOwned>(&mut self, auth: Option<&ApiAuth>, bin: &[u8]) -> Maybe<T> {
+  pub fn recv_auth<'a, T: Revise<'a> + Deserialize<'a>>(&mut self, auth: Option<&ApiAuth>, bin: &'a [u8]) -> Maybe<T> {
     if self.secret_token_buf.is_none() {
       if auth.is_none() {
         return Err(fail("API authentication config is required"));
@@ -162,7 +161,7 @@ impl BotWsSender {
     if msg_bin_len != bin[36 .. ].len() {
       return Err(fail("API message self-consistency failure"));
     }
-    let msg: T = bincode::deserialize_from(Cursor::new(&bin[36 .. ]))
+    let msg: T = deserialize_revision(&bin[36 .. ])
       .map_err(|_| fail("API message deserialization failure"))?;
     Ok(msg)
   }

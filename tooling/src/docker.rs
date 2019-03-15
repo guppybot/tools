@@ -1,5 +1,4 @@
 use crate::query::{Maybe, fail};
-use crate::registry::{RegistryChannel};
 use crate::state::{ImageSpec, Toolchain, Sysroot};
 
 //use chrono::prelude::*;
@@ -457,9 +456,6 @@ impl DockerImage {
       Some(DockerOutput::Buffer{buf_sz, consumer}) => {
         ConsoleMonitor::serialize_to_buffer(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), buf_sz, consumer)
       }
-      /*Some(DockerOutput::Chan(mut chan)) => {
-        ConsoleMonitor::serialize_to_channel(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), Some(&mut chan))
-      }*/
     };
     let maybe_status = proc.wait();
     mon_h.join().ok();
@@ -534,9 +530,6 @@ impl DockerImage {
       Some(DockerOutput::Buffer{buf_sz, consumer}) => {
         ConsoleMonitor::serialize_to_buffer(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), buf_sz, consumer)
       }
-      /*Some(DockerOutput::Chan(mut chan)) => {
-        ConsoleMonitor::serialize_to_channel(proc.stdout.take().unwrap(), proc.stderr.take().unwrap(), Some(&mut chan))
-      }*/
     };
     let maybe_status = proc.wait();
     mon_h.join().ok();
@@ -946,38 +939,4 @@ impl ConsoleMonitor {
     ];
     MonitorJoin{joins}
   }
-
-  /*pub fn serialize_to_channel<Stdout, Stderr>(stdout: Stdout, stderr: Stderr, chan: Option<&mut RegistryChannel>) -> MonitorJoin
-  where Stdout: Read + Send + 'static, Stderr: Read + Send + 'static {
-    let (stdout_tx, mon_rx) = bounded(64);
-    let stderr_tx = stdout_tx.clone();
-    let joins = vec![
-      thread::spawn(move || {
-        let buf = BufReader::with_capacity(64, stdout);
-        for line in buf.lines() {
-          let line = line.unwrap();
-          stdout_tx.send(line).unwrap();
-        }
-      }),
-      thread::spawn(move || {
-        let buf = BufReader::with_capacity(64, stderr);
-        for line in buf.lines() {
-          let line = line.unwrap();
-          stderr_tx.send(line).unwrap();
-        }
-      }),
-      thread::spawn(move || {
-        loop {
-          match mon_rx.recv() {
-            Err(_) => break,
-            Ok(line) => {
-              // FIXME
-              println!("{}", line);
-            }
-          }
-        }
-      }),
-    ];
-    MonitorJoin{joins}
-  }*/
 }
