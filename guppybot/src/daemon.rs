@@ -546,12 +546,12 @@ impl Context {
               let loopback_s = loopback_s.clone();
               let api_key = api_key.clone();
               let ci_run_key = ci_run_key.clone();
-              DockerOutput::Buffer{buf_sz: 16384, consumer: Box::new(move |part_nr, data| loopback_s.send(LoopbackMsg::AppendCiTaskData{
+              DockerOutput::Buffer{buf_sz: 512, consumer: Box::new(move |part_nr, data| loopback_s.send(LoopbackMsg::AppendCiTaskData{
                 api_key: api_key.clone(),
                 ci_run_key: ci_run_key.clone(),
                 task_nr,
                 part_nr,
-                key: "console".to_string(),
+                key: "Console".to_string(),
                 data,
               }).unwrap())}
             };
@@ -833,7 +833,7 @@ impl Context {
         },
         recv(self.reg2bot_r) -> recv_msg => match recv_msg {
           Ok(BotWsMsg::Bin(bin)) => {
-            eprintln!("TRACE: guppybot: recv ws bin message");
+            //eprintln!("TRACE: guppybot: recv ws bin message");
             if self.reg_sender.is_none() {
               continue;
             }

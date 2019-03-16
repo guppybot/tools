@@ -686,7 +686,7 @@ fn _run(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working
     let image = match task.image_candidate() {
       None => {
         if !quiet {
-          println!("  NOT STARTED: No matching image candidate.");
+          println!("- NOT STARTED: No matching image candidate.");
           stdout().flush().unwrap();
         }
         return Ok(DockerRunStatus::Failure);
@@ -704,10 +704,20 @@ fn _run(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working
     }?;
     if let DockerRunStatus::Failure = status {
       if !quiet {
-        // FIXME: display task timing.
         // FIXME: report on the task that failed.
-        //let task_end = Instant::now();
-        println!("  FAILED");
+        let task_end = Instant::now();
+        let task_dur = task_end - task_start;
+        let task_ms = task_dur.subsec_millis() as u64;
+        let task_s = task_dur.as_secs() + task_ms / 500;
+        let task_m = task_s / 60;
+        let task_h = task_m / 60;
+        if task_h > 0 {
+          println!("- FAILED: Total time elapsed: {}h {:02}m {:02}s", task_h, task_m % 60, task_s % 60);
+        } else if task_m > 0 {
+          println!("- FAILED: Total time elapsed: {}m {:02}s", task_m, task_s % 60);
+        } else {
+          println!("- FAILED: Total time elapsed: {}s", task_s);
+        }
         stdout().flush().unwrap();
       }
       return Ok(DockerRunStatus::Failure);
@@ -720,11 +730,11 @@ fn _run(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working
       let task_m = task_s / 60;
       let task_h = task_m / 60;
       if task_h > 0 {
-        println!("  Done (elapsed: {}h {:02}m {:02}s).", task_h, task_m % 60, task_s % 60);
+        println!("- DONE: Total time elapsed: {}h {:02}m {:02}s", task_h, task_m % 60, task_s % 60);
       } else if task_m > 0 {
-        println!("  Done (elapsed: {}m {:02}s).", task_m, task_s % 60);
+        println!("- DONE: Total time elapsed: {}m {:02}s", task_m, task_s % 60);
       } else {
-        println!("  Done (elapsed: {}s).", task_s);
+        println!("- DONE: Total time elapsed: {}s", task_s);
       }
       stdout().flush().unwrap();
     }
