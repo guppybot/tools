@@ -124,9 +124,9 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         .help("The local working directory. If not provided, the default\nis the current directory.")
       )
     )
-    .subcommand(SubCommand::with_name("unauth")
+    /*.subcommand(SubCommand::with_name("unauth")
       .about("Deauthenticate with guppybot.org")
-    )
+    )*/
     /*.subcommand(SubCommand::with_name("unregister-ci-machine")
       .about("Unregister this machine from providing CI for a repository")
     )
@@ -153,15 +153,6 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
-    ("unauth", Some(_matches)) => {
-      match unauth() {
-        Err(e) => {
-          eprintln!("unauth: {:?}", e);
-          1
-        }
-        Ok(_) => 0,
-      }
-    }
     ("install-self", Some(matches)) => {
       let alt_sysroot_path = matches.value_of("DEBUG_ALT_SYSROOT")
         .map(|s| PathBuf::from(s));
@@ -173,7 +164,7 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
-    ("print-config", Some(_matches)) => {
+    /*("print-config", Some(_matches)) => {
       match print_config() {
         Err(e) => {
           eprintln!("print-config: {:?}", e);
@@ -181,8 +172,8 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         }
         Ok(_) => 0,
       }
-    }
-    ("register-ci-group-machine", Some(matches)) => {
+    }*/
+    /*("register-ci-group-machine", Some(matches)) => {
       match register_ci_group_machine() {
         Err(e) => {
           eprintln!("register-ci-group-machine: {:?}", e);
@@ -190,8 +181,8 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         }
         Ok(_) => 0,
       }
-    }
-    ("register-ci-group-repo", Some(matches)) => {
+    }*/
+    /*("register-ci-group-repo", Some(matches)) => {
       match register_ci_group_repo() {
         Err(e) => {
           eprintln!("register-ci-group-repo: {:?}", e);
@@ -199,7 +190,7 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         }
         Ok(_) => 0,
       }
-    }
+    }*/
     ("register-ci-machine", Some(matches)) => {
       let repo_url = matches.value_of("REPOSITORY_URL");
       match register_ci_machine(repo_url) {
@@ -239,7 +230,6 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
       }
     }
     /*("run", Some(matches)) => {
-      // TODO
     }*/
     ("tmp-run", Some(matches)) => {
       let mutable = matches.is_present("MUTABLE");
@@ -262,28 +252,32 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
+    /*("unauth", Some(_matches)) => {
+      match unauth() {
+        Err(e) => {
+          eprintln!("unauth: {:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }*/
     /*("unregister-ci-machine", Some(matches)) => {
-      // TODO
       eprintln!("unregister-ci-machine: not implemented yet!");
       0
     }
     ("unregister-ci-repo", Some(matches)) => {
-      // TODO
       eprintln!("unregister-ci-repo: not implemented yet!");
       0
     }
     ("unregister-machine", Some(matches)) => {
-      // TODO
       eprintln!("unregister-machine: not implemented yet!");
       0
     }*/
     /*("update-self", Some(matches)) => {
-      // TODO
       eprintln!("update-self: not implemented yet!");
       0
     }*/
     /*("x-check-deps", Some(matches)) => {
-      // TODO
       eprintln!("x-check-deps: not implemented yet!");
       0
     }*/
@@ -495,7 +489,6 @@ pub fn install_self(alt_sysroot_path: Option<PathBuf>, guppybot_bin: &[u8]) -> M
 }
 
 pub fn print_config() -> Maybe {
-  // TODO
   let api_cfg = ApiConfig::open_default().ok();
   let machine_cfg = MachineConfigV0::query().ok();
   //let ci_cfg = CiConfigV0::query().ok();
@@ -506,12 +499,10 @@ pub fn print_config() -> Maybe {
 }
 
 pub fn register_ci_group_machine() -> Maybe {
-  // TODO
   Ok(())
 }
 
 pub fn register_ci_group_repo() -> Maybe {
-  // TODO
   Ok(())
 }
 
@@ -618,9 +609,55 @@ pub fn register_machine() -> Maybe {
   chan.send(&Ctl2Bot::RegisterMachine)?;
   let msg = chan.recv()?;
   chan.hup();
-  match msg {
-    Bot2Ctl::RegisterMachine(Some(_)) => {}
+  let (system_setup, machine_cfg) = match msg {
+    Bot2Ctl::RegisterMachine(Some((system_setup, machine_cfg))) => {
+      (system_setup, machine_cfg)
+    }
     Bot2Ctl::RegisterMachine(None) => {
+      return Err(fail("failed to register machine"));
+    }
+    _ => return Err(fail("IPC protocol error")),
+  };
+  // FIXME: pretty printed info.
+  println!("Found the following machine info:");
+  println!("");
+  println!("    system setup: {:?}", system_setup);
+  println!("    machine config: {:?}", machine_cfg);
+  println!("");
+  print!("Register this machine info with guppybot.org? [Y/n] ");
+  let mut yes = false;
+  let mut no = false;
+  for _ in 0 .. 3 {
+    let mut line = String::new();
+    match stdin().read_line(&mut line) {
+      Err(_) => return Err(fail("failed to register machine")),
+      Ok(_) => {}
+    }
+    if line == "Y\n" || line == "y\n" || line == "yes\n" {
+      yes = true;
+      break;
+    } else if line == "N\n" || line == "n\n" || line == "no\n" {
+      no = true;
+      break;
+    }
+  }
+  assert!(!(yes && no));
+  if no {
+    println!("Aborting.");
+  }
+  if !yes {
+    return Err(fail("failed to register machine"));
+  }
+  let mut chan = CtlChannel::open_default()?;
+  chan.send(&Ctl2Bot::ConfirmRegisterMachine{
+    system_setup,
+    machine_cfg,
+  })?;
+  let msg = chan.recv()?;
+  chan.hup();
+  match msg {
+    Bot2Ctl::ConfirmRegisterMachine(Some(_)) => {}
+    Bot2Ctl::ConfirmRegisterMachine(None) => {
       return Err(fail("failed to register machine"));
     }
     _ => return Err(fail("IPC protocol error")),

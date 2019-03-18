@@ -3,7 +3,7 @@ pub use self::{Ack::*};
 use crate::query::{Maybe, fail};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, NativeEndian};
-use schemas::v1::{MachineConfigV0};
+use schemas::v1::{MachineConfigV0, SystemSetupV0};
 use serde::{Deserialize, Serialize};
 
 use std::fs;
@@ -51,6 +51,10 @@ pub enum Ctl2Bot {
   },
   AckRegisterCiRepo,
   RegisterMachine,
+  ConfirmRegisterMachine{
+    system_setup: SystemSetupV0,
+    machine_cfg: MachineConfigV0,
+  },
   AckRegisterMachine,
   ReloadConfig,
   UnregisterCiMachine,
@@ -78,7 +82,8 @@ pub enum Bot2Ctl {
   AckRegisterCiMachine(Ack<()>),
   RegisterCiRepo(Option<()>),
   AckRegisterCiRepo(Ack<RegisterCiRepo>),
-  RegisterMachine(Option<()>),
+  RegisterMachine(Option<(SystemSetupV0, MachineConfigV0)>),
+  ConfirmRegisterMachine(Option<()>),
   AckRegisterMachine(Ack<()>),
   ReloadConfig(Option<()>),
   UnregisterCiMachine(Option<()>),

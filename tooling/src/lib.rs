@@ -20,5 +20,4 @@ pub mod deps;
 pub mod docker;
 pub mod ipc;
 pub mod query;
-//pub mod registry;
 pub mod state;

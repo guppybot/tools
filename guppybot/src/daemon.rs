@@ -238,8 +238,6 @@ struct Context {
   machine_cfg: Option<MachineConfigV0>,
   loopback_r: Receiver<LoopbackMsg>,
   loopback_s: Sender<LoopbackMsg>,
-  //watchdog_r: Receiver<()>,
-  //watchdog_s: Sender<()>,
   workerlb_r: Receiver<WorkerLbMsg>,
   workerlb_s: Sender<WorkerLbMsg>,
   ctlchan_r: Receiver<CtlChannel>,
@@ -254,7 +252,6 @@ struct Context {
   machine_reg_maybe: bool,
   machine_reg: bool,
   evbuf: VecDeque<Event>,
-  // TODO: CI task state.
 }
 
 impl Context {
@@ -270,7 +267,6 @@ impl Context {
     let machine_cfg = MachineConfigV0::query().ok();
     eprintln!("TRACE: machine cfg: {:?}", machine_cfg);
     let (loopback_s, loopback_r) = unbounded();
-    //let (watchdog_s, watchdog_r) = unbounded();
     let (workerlb_s, workerlb_r) = unbounded();
     let (ctlchan_s, ctlchan_r) = unbounded();
     let (reg2bot_s, reg2bot_r) = unbounded();
@@ -284,8 +280,6 @@ impl Context {
       machine_cfg,
       loopback_r,
       loopback_s,
-      //watchdog_r,
-      //watchdog_s,
       workerlb_r,
       workerlb_s,
       ctlchan_r,
@@ -313,8 +307,15 @@ impl Context {
       }
     }
     if !self.machine_reg && self.shared.read().root_manifest.mach_reg_bit() {
-      if self.register_machine().is_none() {
-        eprintln!("TRACE: guppybot: init: failed to register machine with registry");
+      match self.prepare_register_machine() {
+        None => {
+          eprintln!("TRACE: guppybot: init: failed to register machine with registry");
+        }
+        Some((system_setup, machine_cfg)) => {
+          if self.finish_register_machine(system_setup, machine_cfg).is_none() {
+            eprintln!("TRACE: guppybot: init: failed to register machine with registry");
+          }
+        }
       }
     }
     Ok(self)
@@ -331,7 +332,6 @@ impl Context {
   }
 
   fn _dump_api_auth_config(&mut self) -> Option<()> {
-    // TODO
     None
   }
 
@@ -411,7 +411,6 @@ impl Context {
   }
 
   fn _undo_api_auth(&mut self) -> Option<()> {
-    // TODO
     None
   }
 
@@ -467,20 +466,24 @@ impl Context {
     Some(())
   }
 
-  fn register_machine(&mut self) -> Option<()> {
+  fn prepare_register_machine(&mut self) -> Option<(SystemSetupV0, MachineConfigV0)> {
+    if self.machine_cfg.is_none() {
+      return None;
+    }
+    let machine_cfg = self.machine_cfg.clone().unwrap();
+    Some((self.system_setup.clone(), machine_cfg))
+  }
+
+  fn finish_register_machine(&mut self, system_setup: SystemSetupV0, machine_cfg: MachineConfigV0) -> Option<()> {
     self.machine_reg_maybe = false;
     self.machine_reg = false;
     if self.api_cfg.is_none() {
-      return None;
-    }
-    if self.machine_cfg.is_none() {
       return None;
     }
     if self.reg_sender.is_none() {
       return None;
     }
     let api_cfg = self.api_cfg.as_ref().unwrap();
-    let machine_cfg = self.machine_cfg.clone().unwrap();
     if self.reg_sender.as_mut().unwrap()
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
@@ -490,8 +493,8 @@ impl Context {
               Some(buf) => buf,
             },
             machine_key: self.shared.read().root_manifest.key_buf().as_vec().clone(),
-            system_setup: self.system_setup.clone(),
-            machine_cfg,
+            system_setup: system_setup,
+            machine_cfg: machine_cfg,
           }
       ).is_err()
     {
@@ -511,7 +514,6 @@ fn handle_workerlb_ci_task(
     checkout: GitCheckoutSpec,
     task: TaskSpec,
 ) {
-  // TODO
   eprintln!("TRACE: guppybot: worker: ci task: {}", task_nr);
   loopback_s.send(LoopbackMsg::StartCiTask{
     api_key: api_key.clone(),
@@ -523,7 +525,6 @@ fn handle_workerlb_ci_task(
   eprintln!("TRACE: guppybot: worker:   get imagespec...");
   let image = match task.image_candidate() {
     None => {
-      // TODO
       loopback_s.send(LoopbackMsg::DoneCiTask{
         api_key: api_key.clone(),
         ci_run_key: ci_run_key.clone(),
@@ -537,7 +538,6 @@ fn handle_workerlb_ci_task(
   eprintln!("TRACE: guppybot: worker:   load manifest...");
   let mut image_manifest = match ImageManifest::load(&shared.sysroot, &shared.root_manifest) {
     Err(_) => {
-      // TODO
       loopback_s.send(LoopbackMsg::DoneCiTask{
         api_key: api_key.clone(),
         ci_run_key: ci_run_key.clone(),
@@ -555,7 +555,6 @@ fn handle_workerlb_ci_task(
       &shared.root_manifest,
   ) {
     Err(_) => {
-      // TODO
       loopback_s.send(LoopbackMsg::DoneCiTask{
         api_key: api_key.clone(),
         ci_run_key: ci_run_key.clone(),
@@ -582,7 +581,6 @@ fn handle_workerlb_ci_task(
   };
   let status = match docker_image.run(&checkout, &task, &shared.sysroot, Some(output)) {
     Err(_) => {
-      // TODO
       loopback_s.send(LoopbackMsg::DoneCiTask{
         api_key: api_key.clone(),
         ci_run_key: ci_run_key.clone(),
@@ -647,7 +645,6 @@ impl Context {
         match ctl_server.accept() {
           Err(_) => continue,
           Ok(mut chan) => {
-            // TODO
             ctlchan_s.send(chan).unwrap();
           }
         }
@@ -790,27 +787,21 @@ impl Context {
                 Bot2Ctl::_AckRetryApiAuth(ack)
               }
               Ctl2Bot::_UndoApiAuth => {
-                // TODO
                 Bot2Ctl::_UndoApiAuth(None)
               }
               Ctl2Bot::EchoApiId => {
-                // TODO
                 Bot2Ctl::EchoApiId(None)
               }
               Ctl2Bot::EchoMachineId => {
-                // TODO
                 Bot2Ctl::EchoMachineId(None)
               }
               Ctl2Bot::PrintConfig => {
-                // TODO
                 Bot2Ctl::PrintConfig(None)
               }
               Ctl2Bot::RegisterCiGroupMachine{group_id} => {
-                // TODO
                 unimplemented!();
               }
               Ctl2Bot::RegisterCiGroupRepo{group_id, repo_url} => {
-                // TODO
                 unimplemented!();
               }
               Ctl2Bot::RegisterCiMachine{repo_url} => {
@@ -859,7 +850,11 @@ impl Context {
                 }
               }
               Ctl2Bot::RegisterMachine => {
-                Bot2Ctl::RegisterMachine(self.register_machine())
+                Bot2Ctl::RegisterMachine(self.prepare_register_machine())
+              }
+              Ctl2Bot::ConfirmRegisterMachine{system_setup, machine_cfg} => {
+                let rep = self.finish_register_machine(system_setup, machine_cfg);
+                Bot2Ctl::ConfirmRegisterMachine(rep)
               }
               Ctl2Bot::AckRegisterMachine => {
                 let ack = match (self.machine_reg_maybe, self.machine_reg) {
@@ -871,21 +866,17 @@ impl Context {
                 Bot2Ctl::AckRegisterMachine(ack)
               }
               Ctl2Bot::ReloadConfig => {
-                // TODO
                 self.api_cfg = ApiConfig::open_default().ok();
                 self.machine_cfg = MachineConfigV0::query().ok();
                 Bot2Ctl::ReloadConfig(Some(()))
               }
               Ctl2Bot::UnregisterCiMachine => {
-                // TODO
                 Bot2Ctl::UnregisterCiMachine(None)
               }
               Ctl2Bot::UnregisterCiRepo => {
-                // TODO
                 Bot2Ctl::UnregisterCiRepo(None)
               }
               Ctl2Bot::UnregisterMachine => {
-                // TODO
                 Bot2Ctl::UnregisterMachine(None)
               }
               _ => {
@@ -917,7 +908,6 @@ impl Context {
             };
             match msg {
               Registry2BotV0::_Pong => {
-                // TODO
                 eprintln!("TRACE: guppybot: pong");
               }
               Registry2BotV0::_NewCiRun{api_key, ci_run_key, repo_clone_url, originator, ref_full, commit_hash, runspec} => {
@@ -933,7 +923,7 @@ impl Context {
                     base64::URL_SAFE,
                     &mut ci_run_id,
                 );
-                // TODO: logging verbosity.
+                // FIXME: logging verbosity.
                 eprintln!("TRACE: guppybot: new ci run:");
                 eprintln!("TRACE: guppybot:   api id: {:?}", api_id);
                 eprintln!("TRACE: guppybot:   ci run id: {:?}", ci_run_id);
@@ -1018,22 +1008,16 @@ impl Context {
                 }
               }
               Registry2BotV0::_StartCiTask(Some(_)) => {
-                // TODO
               }
               Registry2BotV0::_StartCiTask(None) => {
-                // TODO
               }
               Registry2BotV0::_AppendCiTaskData(Some(_)) => {
-                // TODO
               }
               Registry2BotV0::_AppendCiTaskData(None) => {
-                // TODO
               }
               Registry2BotV0::_DoneCiTask(Some(_)) => {
-                // TODO
               }
               Registry2BotV0::_DoneCiTask(None) => {
-                // TODO
               }
               Registry2BotV0::Auth(Some(_)) => {
                 let mut shared = self.shared.write();
