@@ -3,7 +3,9 @@ use chrono::{SecondsFormat, Utc};
 use crossbeam_channel::{Sender, Receiver, unbounded};
 use monosodium::{auth_sign, auth_verify};
 use monosodium::util::{CryptoBuf};
-use parking_lot::{RwLock};
+use parking_lot::{RwLock, RwLockReadGuard};
+use rand::prelude::*;
+use rand::distributions::{Uniform};
 use schemas::{Revise, deserialize_revision, serialize_revision_into};
 use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2RegistryV0, Registry2BotV0, _NewCiRunV0, RegisterCiRepoV0};
 use serde::{Deserialize, Serialize};
@@ -18,6 +20,7 @@ use std::fs::{File};
 use std::io::{Read, Write, Cursor};
 use std::path::{PathBuf};
 use std::sync::{Arc};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::{JoinHandle, spawn};
 
 pub fn runloop() -> Maybe {
@@ -49,22 +52,23 @@ enum BotWsMsg {
   Open(BotWsSender),
   Bin(Vec<u8>),
   Hup,
+  Error,
 }
 
 struct BotWsConn {
+  loopback_s: Sender<LoopbackMsg>,
   reg2bot_s: Sender<BotWsMsg>,
+  reg_echo_ctr: Arc<AtomicUsize>,
   registry_s: ws::Sender,
 }
 
 impl ws::Handler for BotWsConn {
-  fn on_shutdown(&mut self) {
-    // TODO
-    eprintln!("TRACE: BotWsConn: on_shutdown");
-    self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
-  }
-
   fn on_open(&mut self, _: ws::Handshake) -> ws::Result<()> {
     eprintln!("TRACE: BotWsConn: on_open");
+    let delay_s_dist = Uniform::new_inclusive(3600.0, 5400.0);
+    let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
+    let echo_ctr = self.reg_echo_ctr.fetch_add(1, Ordering::Relaxed) + 1;
+    self.registry_s.timeout(delay_ms as _, ws::util::Token(echo_ctr)).unwrap();
     self.reg2bot_s.send(BotWsMsg::Open(BotWsSender{
       registry_s: self.registry_s.clone(),
       secret_token_buf: None,
@@ -73,25 +77,36 @@ impl ws::Handler for BotWsConn {
   }
 
   fn on_message(&mut self, msg: ws::Message) -> ws::Result<()> {
+    let delay_s_dist = Uniform::new_inclusive(3600.0, 5400.0);
+    let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
+    let echo_ctr = self.reg_echo_ctr.fetch_add(1, Ordering::Relaxed) + 1;
+    self.registry_s.timeout(delay_ms as _, ws::util::Token(echo_ctr)).unwrap();
     if let ws::Message::Binary(bin) = msg {
       self.reg2bot_s.send(BotWsMsg::Bin(bin)).unwrap();
     }
     Ok(())
   }
 
+  fn on_shutdown(&mut self) {
+    // FIXME: try to reconnect.
+    eprintln!("TRACE: BotWsConn: on_shutdown");
+    self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
+  }
+
   fn on_close(&mut self, _: ws::CloseCode, _: &str) {
-    // TODO
+    // FIXME: try to reconnect.
     eprintln!("TRACE: BotWsConn: on_close");
     self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
   }
 
   fn on_error(&mut self, _: ws::Error) {
-    // TODO
+    // FIXME: try to reconnect.
     eprintln!("TRACE: BotWsConn: on_error");
+    self.reg2bot_s.send(BotWsMsg::Error).unwrap();
   }
 
-  fn on_timeout(&mut self, _: ws::util::Token) -> ws::Result<()> {
-    // TODO
+  fn on_timeout(&mut self, token: ws::util::Token) -> ws::Result<()> {
+    self.loopback_s.send(LoopbackMsg::_Echo{echo_ctr: token.0}).unwrap();
     Ok(())
   }
 }
@@ -168,6 +183,9 @@ impl BotWsSender {
 }
 
 enum LoopbackMsg {
+  _Echo{
+    echo_ctr: usize,
+  },
   StartCiTask{
     api_key: Vec<u8>,
     ci_run_key: Vec<u8>,
@@ -215,13 +233,13 @@ struct Shared {
 
 struct Context {
   shared: Arc<RwLock<Shared>>,
-  //sysroot: Sysroot,
-  //root_manifest: RootManifest,
   system_setup: SystemSetupV0,
   api_cfg: Option<ApiConfig>,
   machine_cfg: Option<MachineConfigV0>,
   loopback_r: Receiver<LoopbackMsg>,
   loopback_s: Sender<LoopbackMsg>,
+  //watchdog_r: Receiver<()>,
+  //watchdog_s: Sender<()>,
   workerlb_r: Receiver<WorkerLbMsg>,
   workerlb_s: Sender<WorkerLbMsg>,
   ctlchan_r: Receiver<CtlChannel>,
@@ -230,6 +248,7 @@ struct Context {
   reg2bot_s: Sender<BotWsMsg>,
   reg_conn_join_h: Option<JoinHandle<()>>,
   reg_sender: Option<BotWsSender>,
+  reg_echo_ctr: Arc<AtomicUsize>,
   auth_maybe: bool,
   auth: bool,
   machine_reg_maybe: bool,
@@ -251,6 +270,7 @@ impl Context {
     let machine_cfg = MachineConfigV0::query().ok();
     eprintln!("TRACE: machine cfg: {:?}", machine_cfg);
     let (loopback_s, loopback_r) = unbounded();
+    //let (watchdog_s, watchdog_r) = unbounded();
     let (workerlb_s, workerlb_r) = unbounded();
     let (ctlchan_s, ctlchan_r) = unbounded();
     let (reg2bot_s, reg2bot_r) = unbounded();
@@ -264,6 +284,8 @@ impl Context {
       machine_cfg,
       loopback_r,
       loopback_s,
+      //watchdog_r,
+      //watchdog_s,
       workerlb_r,
       workerlb_s,
       ctlchan_r,
@@ -272,6 +294,7 @@ impl Context {
       reg2bot_s,
       reg_conn_join_h: None,
       reg_sender: None,
+      reg_echo_ctr: Arc::new(AtomicUsize::new(0)),
       auth_maybe: false,
       auth: false,
       machine_reg_maybe: false,
@@ -282,16 +305,16 @@ impl Context {
 
   fn _init(&mut self) -> Maybe<&mut Context> {
     if self._reconnect_reg().is_none() {
-      eprintln!("TRACE: init: failed to connect to registry");
+      eprintln!("TRACE: guppybot: init: failed to connect to registry");
     }
     if !self.auth && self.shared.read().root_manifest.auth_bit() {
       if self._retry_api_auth().is_none() {
-        eprintln!("TRACE: init: failed to authenticate with registry");
+        eprintln!("TRACE: guppybot: init: failed to authenticate with registry");
       }
     }
     if !self.machine_reg && self.shared.read().root_manifest.mach_reg_bit() {
       if self.register_machine().is_none() {
-        eprintln!("TRACE: init: failed to register machine with registry");
+        eprintln!("TRACE: guppybot: init: failed to register machine with registry");
       }
     }
     Ok(self)
@@ -324,19 +347,23 @@ impl Context {
       return None;
     }
     if self.reg_conn_join_h.is_some() {
-      eprintln!("TRACE: reconnecting to registry");
+      eprintln!("TRACE: guppybot: reconnecting to registry");
     }
     let api_cfg = self.api_cfg.as_ref().unwrap();
+    let loopback_s = self.loopback_s.clone();
     let reg2bot_s = self.reg2bot_s.clone();
+    let reg_echo_ctr = self.reg_echo_ctr.clone();
     self.reg_conn_join_h = Some(spawn(move || {
       match ws::connect("wss://guppybot.org:443/w/v1/", |registry_s| {
         BotWsConn{
+          loopback_s: loopback_s.clone(),
           reg2bot_s: reg2bot_s.clone(),
+          reg_echo_ctr: reg_echo_ctr.clone(),
           registry_s,
         }
       }) {
         Err(_) => {
-          eprintln!("TRACE: failed to connect to registry");
+          eprintln!("TRACE: guppybot: failed to connect to registry");
         }
         Ok(_) => {}
       }
@@ -473,7 +500,123 @@ impl Context {
     self.machine_reg_maybe = true;
     Some(())
   }
+}
 
+fn handle_workerlb_ci_task(
+    shared: RwLockReadGuard<Shared>,
+    loopback_s: &Sender<LoopbackMsg>,
+    api_key: Vec<u8>,
+    ci_run_key: Vec<u8>,
+    task_nr: u64,
+    checkout: GitCheckoutSpec,
+    task: TaskSpec,
+) {
+  // TODO
+  eprintln!("TRACE: guppybot: worker: ci task: {}", task_nr);
+  loopback_s.send(LoopbackMsg::StartCiTask{
+    api_key: api_key.clone(),
+    ci_run_key: ci_run_key.clone(),
+    task_nr,
+    task_name: Some(task.name.clone()),
+    taskspec: None,
+  }).unwrap();
+  eprintln!("TRACE: guppybot: worker:   get imagespec...");
+  let image = match task.image_candidate() {
+    None => {
+      // TODO
+      loopback_s.send(LoopbackMsg::DoneCiTask{
+        api_key: api_key.clone(),
+        ci_run_key: ci_run_key.clone(),
+        task_nr,
+        failed: true,
+      }).unwrap();
+      return;
+    }
+    Some(image) => image,
+  };
+  eprintln!("TRACE: guppybot: worker:   load manifest...");
+  let mut image_manifest = match ImageManifest::load(&shared.sysroot, &shared.root_manifest) {
+    Err(_) => {
+      // TODO
+      loopback_s.send(LoopbackMsg::DoneCiTask{
+        api_key: api_key.clone(),
+        ci_run_key: ci_run_key.clone(),
+        task_nr,
+        failed: true,
+      }).unwrap();
+      return;
+    }
+    Ok(manifest) => manifest,
+  };
+  eprintln!("TRACE: guppybot: worker:   lookup docker image...");
+  let docker_image = match image_manifest.lookup_docker_image(
+      &image,
+      &shared.sysroot,
+      &shared.root_manifest,
+  ) {
+    Err(_) => {
+      // TODO
+      loopback_s.send(LoopbackMsg::DoneCiTask{
+        api_key: api_key.clone(),
+        ci_run_key: ci_run_key.clone(),
+        task_nr,
+        failed: true,
+      }).unwrap();
+      return;
+    }
+    Ok(im) => im,
+  };
+  eprintln!("TRACE: guppybot: worker:   run...");
+  let output = {
+    let loopback_s = loopback_s.clone();
+    let api_key = api_key.clone();
+    let ci_run_key = ci_run_key.clone();
+    DockerOutput::Buffer{buf_sz: 512, consumer: Box::new(move |part_nr, data| loopback_s.send(LoopbackMsg::AppendCiTaskData{
+      api_key: api_key.clone(),
+      ci_run_key: ci_run_key.clone(),
+      task_nr,
+      part_nr,
+      key: "Console".to_string(),
+      data,
+    }).unwrap())}
+  };
+  let status = match docker_image.run(&checkout, &task, &shared.sysroot, Some(output)) {
+    Err(_) => {
+      // TODO
+      loopback_s.send(LoopbackMsg::DoneCiTask{
+        api_key: api_key.clone(),
+        ci_run_key: ci_run_key.clone(),
+        task_nr,
+        failed: true,
+      }).unwrap();
+      return;
+    }
+    Ok(status) => {
+      eprintln!("TRACE: guppybot: worker:   status: {:?}", status);
+      status
+    }
+  };
+  match status {
+    DockerRunStatus::Failure => {
+      loopback_s.send(LoopbackMsg::DoneCiTask{
+        api_key,
+        ci_run_key,
+        task_nr,
+        failed: true,
+      }).unwrap();
+    }
+    DockerRunStatus::Success => {
+      loopback_s.send(LoopbackMsg::DoneCiTask{
+        api_key,
+        ci_run_key,
+        task_nr,
+        failed: false,
+      }).unwrap();
+    }
+  }
+}
+
+impl Context {
   pub fn runloop(&mut self) -> Maybe {
     let shared = self.shared.clone();
     let loopback_s = self.loopback_s.clone();
@@ -485,110 +628,11 @@ impl Context {
         match workerlb_r.recv() {
           Err(_) => continue,
           Ok(WorkerLbMsg::CiTask{api_key, ci_run_key, task_nr, checkout, task}) => {
-            // TODO
-            eprintln!("TRACE: guppybot: worker: ci task: {}", task_nr);
-            let shared = shared.read();
-            loopback_s.send(LoopbackMsg::StartCiTask{
-              api_key: api_key.clone(),
-              ci_run_key: ci_run_key.clone(),
-              task_nr,
-              task_name: Some(task.name.clone()),
-              taskspec: None,
-            }).unwrap();
-            eprintln!("TRACE: guppybot: worker:   get imagespec...");
-            let image = match task.image_candidate() {
-              None => {
-                // TODO
-                loopback_s.send(LoopbackMsg::DoneCiTask{
-                  api_key: api_key.clone(),
-                  ci_run_key: ci_run_key.clone(),
-                  task_nr,
-                  failed: true,
-                }).unwrap();
-                continue;
-              }
-              Some(image) => image,
-            };
-            eprintln!("TRACE: guppybot: worker:   load manifest...");
-            let mut image_manifest = match ImageManifest::load(&shared.sysroot, &shared.root_manifest) {
-              Err(_) => {
-                // TODO
-                loopback_s.send(LoopbackMsg::DoneCiTask{
-                  api_key: api_key.clone(),
-                  ci_run_key: ci_run_key.clone(),
-                  task_nr,
-                  failed: true,
-                }).unwrap();
-                continue;
-              }
-              Ok(manifest) => manifest,
-            };
-            eprintln!("TRACE: guppybot: worker:   lookup docker image...");
-            let docker_image = match image_manifest.lookup_docker_image(
-                &image,
-                &shared.sysroot,
-                &shared.root_manifest,
-            ) {
-              Err(_) => {
-                // TODO
-                loopback_s.send(LoopbackMsg::DoneCiTask{
-                  api_key: api_key.clone(),
-                  ci_run_key: ci_run_key.clone(),
-                  task_nr,
-                  failed: true,
-                }).unwrap();
-                continue;
-              }
-              Ok(im) => im,
-            };
-            eprintln!("TRACE: guppybot: worker:   run...");
-            let output = {
-              let loopback_s = loopback_s.clone();
-              let api_key = api_key.clone();
-              let ci_run_key = ci_run_key.clone();
-              DockerOutput::Buffer{buf_sz: 512, consumer: Box::new(move |part_nr, data| loopback_s.send(LoopbackMsg::AppendCiTaskData{
-                api_key: api_key.clone(),
-                ci_run_key: ci_run_key.clone(),
-                task_nr,
-                part_nr,
-                key: "Console".to_string(),
-                data,
-              }).unwrap())}
-            };
-            let status = match docker_image.run(&checkout, &task, &shared.sysroot, Some(output)) {
-              Err(_) => {
-                // TODO
-                loopback_s.send(LoopbackMsg::DoneCiTask{
-                  api_key: api_key.clone(),
-                  ci_run_key: ci_run_key.clone(),
-                  task_nr,
-                  failed: true,
-                }).unwrap();
-                continue;
-              }
-              Ok(status) => {
-                eprintln!("TRACE: guppybot: worker:   status: {:?}", status);
-                status
-              }
-            };
-            match status {
-              DockerRunStatus::Failure => {
-                loopback_s.send(LoopbackMsg::DoneCiTask{
-                  api_key,
-                  ci_run_key,
-                  task_nr,
-                  failed: true,
-                }).unwrap();
-              }
-              DockerRunStatus::Success => {
-                loopback_s.send(LoopbackMsg::DoneCiTask{
-                  api_key,
-                  ci_run_key,
-                  task_nr,
-                  failed: false,
-                }).unwrap();
-              }
-            }
+            handle_workerlb_ci_task(
+                shared.read(),
+                &loopback_s,
+                api_key, ci_run_key, task_nr, checkout, task,
+            );
           }
         }
       }
@@ -615,6 +659,30 @@ impl Context {
       select! {
         recv(self.loopback_r) -> msg => match msg {
           Err(_) => {}
+          Ok(LoopbackMsg::_Echo{echo_ctr}) => {
+            let reg_echo_ctr = self.reg_echo_ctr.load(Ordering::Relaxed);
+            if echo_ctr != reg_echo_ctr {
+            } else if echo_ctr == reg_echo_ctr {
+              eprintln!("TRACE: guppybot: ping...");
+              if self.reg_sender.is_none() {
+                continue;
+              }
+              if self.reg_sender.as_mut().unwrap()
+                .send_auth(
+                    self.api_cfg.as_ref().map(|api| &api.auth),
+                    &Bot2RegistryV0::_Ping{
+                      // FIXME
+                      api_key: vec![],
+                      machine_key: self.shared.read().root_manifest.key_buf().as_vec().clone(),
+                    }
+                ).is_err()
+              {
+                continue;
+              }
+            } else {
+              unreachable!();
+            }
+          }
           Ok(LoopbackMsg::StartCiTask{api_key, ci_run_key, task_nr, task_name, taskspec}) => {
             if self.reg_sender.is_none() {
               continue;
@@ -848,6 +916,10 @@ impl Context {
               Ok(msg) => msg,
             };
             match msg {
+              Registry2BotV0::_Pong => {
+                // TODO
+                eprintln!("TRACE: guppybot: pong");
+              }
               Registry2BotV0::_NewCiRun{api_key, ci_run_key, repo_clone_url, originator, ref_full, commit_hash, runspec} => {
                 let mut api_id = String::new();
                 base64::encode_config_buf(
@@ -1050,7 +1122,7 @@ impl Context {
               _ => {}
             }
           }
-          Ok(BotWsMsg::Hup) => {
+          Ok(BotWsMsg::Hup) | Ok(BotWsMsg::Error) => {
             // FIXME: try to reconnect/reauth.
             if let Some(h) = self.reg_conn_join_h.take() {
               h.join().ok();

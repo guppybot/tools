@@ -211,12 +211,13 @@ impl Query for DriverVersionV0 {
 }
 
 fn parse_cuda_version_int(x: c_int) -> Maybe<CudaVersionV0> {
+  if x < 0 {
+    return Err(fail("unsupported cuda version"));
+  }
+  let x = x as u32;
   let major = x / 1000;
   let minor = (x - major * 1000) / 10;
-  CudaVersionV0::from_major_minor(
-      major as _,
-      minor as _,
-  ).ok_or_else(|| fail("unsupported cuda version"))
+  Ok(CudaVersionV0{major, minor})
 }
 
 fn query_driver_cuda_version() -> Maybe<CudaVersionV0> {

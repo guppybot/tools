@@ -6,6 +6,7 @@ extern crate chrono;
 extern crate ctrlc;
 extern crate monosodium;
 extern crate parking_lot;
+extern crate rand;
 extern crate schemas;
 extern crate toml;
 extern crate tooling;

@@ -7,7 +7,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use monosodium::{generic_hash};
 use monosodium::util::{CryptoBuf};
 use schemas::v1::{
-  CudaVersionV0::{self, *},
+  CudaVersionV0,
   DistroIdV0::{self, *},
   DistroCodenameV0::{self, *},
 };
@@ -343,14 +343,14 @@ impl ImageManifest {
             match part_toks[0] {
               "cuda" => {
                 let v = match part_toks[1] {
-                  "v6_5" => Cuda6_5,
-                  "v7_0" => Cuda7_0,
-                  "v7_5" => Cuda7_5,
-                  "v8_0" => Cuda8_0,
-                  "v9_0" => Cuda9_0,
-                  "v9_1" => Cuda9_1,
-                  "v9_2" => Cuda9_2,
-                  "v10_0" => Cuda10_0,
+                  "v6_5" => CudaVersionV0{major: 6, minor: 5},
+                  "v7_0" => CudaVersionV0{major: 7, minor: 0},
+                  "v7_5" => CudaVersionV0{major: 7, minor: 5},
+                  "v8_0" => CudaVersionV0{major: 8, minor: 0},
+                  "v9_0" => CudaVersionV0{major: 9, minor: 0},
+                  "v9_1" => CudaVersionV0{major: 9, minor: 1},
+                  "v9_2" => CudaVersionV0{major: 9, minor: 2},
+                  "v10_0" => CudaVersionV0{major: 10, minor: 0},
                   _ => return Err(fail("bug: bad images manifest")),
                 };
                 builder.cuda = Some(v);

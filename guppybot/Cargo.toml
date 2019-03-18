@@ -13,8 +13,9 @@ byteorder = "^1.3"
 chrono = "^0.4"
 crossbeam-channel = "^0.3"
 ctrlc = "^3.1"
-monosodium = { path = "../../monosodium" }
+monosodium = { path = "../monosodium" }
 parking_lot = "^0.7"
+rand = "^0.6"
 schemas = { path = "../../schemas" }
 serde = "^1.0"
 toml = "^0.4"

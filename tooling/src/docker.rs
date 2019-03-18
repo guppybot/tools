@@ -132,7 +132,7 @@ impl TaskSpec {
             Some(v)
           }
           (Version::Any, None) => {
-            Some(CudaVersionV0::Cuda10_0)
+            Some(CudaVersionV0{major: 10, minor: 0})
           }
           _ => return None,
         },
@@ -738,14 +738,14 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
                   task_toks[1]
                 };
                 let code = match code_str {
-                  "6.5" => CudaVersionV0::Cuda6_5,
-                  "7.0" => CudaVersionV0::Cuda7_0,
-                  "7.5" => CudaVersionV0::Cuda7_5,
-                  "8.0" => CudaVersionV0::Cuda8_0,
-                  "9.0" => CudaVersionV0::Cuda9_0,
-                  "9.1" => CudaVersionV0::Cuda9_1,
-                  "9.2" => CudaVersionV0::Cuda9_2,
-                  "10.0" => CudaVersionV0::Cuda10_0,
+                  "6.5" => CudaVersionV0{major: 6, minor: 5},
+                  "7.0" => CudaVersionV0{major: 7, minor: 0},
+                  "7.5" => CudaVersionV0{major: 7, minor: 5},
+                  "8.0" => CudaVersionV0{major: 8, minor: 0},
+                  "9.0" => CudaVersionV0{major: 9, minor: 0},
+                  "9.1" => CudaVersionV0{major: 9, minor: 1},
+                  "9.2" => CudaVersionV0{major: 9, minor: 2},
+                  "10.0" => CudaVersionV0{major: 10, minor: 0},
                   _ => return Err(fail("v0.task: unsupported cuda version")),
                 };
                 Some(code)

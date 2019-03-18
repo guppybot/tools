@@ -15,8 +15,9 @@ use tooling::state::{ImageManifest, ImageSpec, RootManifest, Sysroot};
 //use url::{Url};
 
 use std::env::{current_dir};
-use std::fs::{File, create_dir_all};
+use std::fs::{File, Permissions, create_dir_all};
 use std::io::{Write, stdin, stdout};
+use std::os::unix::fs::{PermissionsExt};
 use std::path::{PathBuf};
 use std::process::{Command, exit};
 use std::time::{Instant};
@@ -90,7 +91,7 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     /*.subcommand(SubCommand::with_name("run")
       .about("")
     )*/
-    .subcommand(SubCommand::with_name("run")
+    .subcommand(SubCommand::with_name("tmp-run")
       .about("Run a local gup.py script in a local working directory")
       .arg(Arg::with_name("FILE")
         .short("f")
@@ -237,7 +238,10 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
-    ("run", Some(matches)) => {
+    /*("run", Some(matches)) => {
+      // TODO
+    }*/
+    ("tmp-run", Some(matches)) => {
       let mutable = matches.is_present("MUTABLE");
       let stdout = matches.is_present("STDOUT");
       let quiet = matches.is_present("QUIET");
@@ -250,9 +254,9 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
           &None => PathBuf::from("gup.py"),
           &Some(ref p) => p.join("gup.py"),
         });
-      match run(mutable, quiet, stdout, gup_py_path, working_dir) {
+      match run_local(mutable, quiet, stdout, gup_py_path, working_dir) {
         Err(e) => {
-          eprintln!("run: {:?}", e);
+          eprintln!("run-local: {:?}", e);
           1
         }
         Ok(_) => 0,
@@ -465,12 +469,13 @@ pub fn install_deps() -> Maybe {
   Ok(())
 }
 
-pub fn install_self(alt_sysroot_path: Option<PathBuf>, _guppybot_bin: &[u8]) -> Maybe {
-  // FIXME: reenable the daemon installation.
-  /*let mut bot_file = File::create("/usr/local/lib/guppybot")
-    .map_err(|_| fail("Failed to create guppybot daemon file: are you root?"))?;
+pub fn install_self(alt_sysroot_path: Option<PathBuf>, guppybot_bin: &[u8]) -> Maybe {
+  let mut bot_file = File::create("/usr/local/bin/guppybot")
+    .map_err(|_| fail("Failed to create guppybot daemon: are you root?"))?;
   bot_file.write_all(guppybot_bin)
-    .map_err(|_| fail("Failed to write guppybot daemon file: are you root?"))?;*/
+    .map_err(|_| fail("Failed to write guppybot daemon: are you root?"))?;
+  bot_file.set_permissions(Permissions::from_mode(0o755))
+    .map_err(|_| fail("Failed to set executable permissions on guppybot daemon: are you root?"))?;
   let gpus = GpusV0::query()?;
   let config = Config::default();
   config.install_default(&gpus)?;
@@ -483,6 +488,7 @@ pub fn install_self(alt_sysroot_path: Option<PathBuf>, _guppybot_bin: &[u8]) -> 
   println!("Guppybot-related files have been installed to:");
   println!();
   println!("    {}", config.config_dir.display());
+  println!("    /usr/local/bin/guppybot");
   println!("    {}", sysroot.base_dir.display());
   println!();
   Ok(())
@@ -648,7 +654,7 @@ pub fn reload_config() -> Maybe {
   Ok(())
 }
 
-fn _run(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
+fn _run_local(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
   let run_start = Instant::now();
 
   let sysroot = Sysroot::default();
@@ -761,8 +767,8 @@ fn _run(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working
   Ok(DockerRunStatus::Success)
 }
 
-pub fn run(mutable: bool, quiet: bool, stdout: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
-  match _run(mutable, quiet, stdout, gup_py_path, working_dir)? {
+pub fn run_local(mutable: bool, quiet: bool, stdout: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
+  match _run_local(mutable, quiet, stdout, gup_py_path, working_dir)? {
     DockerRunStatus::Success => {
       Ok(())
     }
