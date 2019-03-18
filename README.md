@@ -18,6 +18,8 @@ newer). Install Rust using [rustup](https://rustup.rs/).
 2.  Do `sudo make install` to install the frontend to `/usr/local/bin/guppyctl`.
 3.  Run `guppyctl install-self` to finish the installation.
 
+Run `guppyctl -h` to check that the installation worked.
+
 ## Configuration
 
 1.  Required: edit `/etc/guppybot/api` with your API authentication details
