@@ -1,3 +1,6 @@
 [submodule "monosodium"]
 	path = monosodium
 	url = https://github.com/peterhj/monosodium.git
+[submodule "schemas"]
+	path = schemas
+	url = https://github.com/guppybot/schemas.git
