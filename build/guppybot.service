@@ -1,0 +1,11 @@
+[Unit]
+Description=Guppybot GPU automation daemon
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/guppybot
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

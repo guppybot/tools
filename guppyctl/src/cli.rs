@@ -6,6 +6,7 @@ use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0};
 use semver::{Version};
 use serde_json::{Value as JsonValue};
 use tempfile::{NamedTempFile};
+use tooling::assets::{GUPPYBOT_SERVICE};
 use tooling::config::{Config, ApiConfig};
 use tooling::deps::{DockerDeps, Docker, NvidiaDocker2};
 use tooling::docker::{GitCheckoutSpec, DockerOutput, DockerRunStatus};
@@ -464,12 +465,20 @@ pub fn install_deps() -> Maybe {
 }
 
 pub fn install_self(alt_sysroot_path: Option<PathBuf>, guppybot_bin: &[u8]) -> Maybe {
-  let mut bot_file = File::create("/usr/local/bin/guppybot")
-    .map_err(|_| fail("Failed to create guppybot daemon: are you root?"))?;
-  bot_file.write_all(guppybot_bin)
-    .map_err(|_| fail("Failed to write guppybot daemon: are you root?"))?;
-  bot_file.set_permissions(Permissions::from_mode(0o755))
-    .map_err(|_| fail("Failed to set executable permissions on guppybot daemon: are you root?"))?;
+  {
+    let mut bot_file = File::create("/usr/local/bin/guppybot")
+      .map_err(|_| fail("Failed to create guppybot daemon: are you root?"))?;
+    bot_file.write_all(guppybot_bin)
+      .map_err(|_| fail("Failed to write guppybot daemon: are you root?"))?;
+    bot_file.set_permissions(Permissions::from_mode(0o755))
+      .map_err(|_| fail("Failed to set executable permissions on guppybot daemon: are you root?"))?;
+  }
+  {
+    let mut service_file = File::create("/etc/systemd/system/guppybot.service")
+      .map_err(|_| fail("Failed to create guppybot service file: are you root?"))?;
+    service_file.write_all(GUPPYBOT_SERVICE)
+      .map_err(|_| fail("Failed to write guppybot service file: are you root?"))?;
+  }
   let gpus = GpusV0::query()?;
   let config = Config::default();
   config.install_default(&gpus)?;
@@ -482,6 +491,7 @@ pub fn install_self(alt_sysroot_path: Option<PathBuf>, guppybot_bin: &[u8]) -> M
   println!("Guppybot-related files have been installed to:");
   println!();
   println!("    {}", config.config_dir.display());
+  println!("    /etc/systemd/system/guppybot.service");
   println!("    /usr/local/bin/guppybot");
   println!("    {}", sysroot.base_dir.display());
   println!();
