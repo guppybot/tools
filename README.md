@@ -10,7 +10,7 @@ Currently there are two executable tools:
 ## Installation
 
 1.  Build with `make`.
-2.  Install `/usr/local/bin/guppyctl` with `sudo make install`.
+2.  Do `sudo make install` to install the frontend to `/usr/local/bin/guppyctl`.
 3.  Run `guppyctl install-self` to finish the installation.
 
 ## Configuration
