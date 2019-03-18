@@ -20,12 +20,18 @@ newer). Install Rust using [rustup](https://rustup.rs/).
 
 Run `guppyctl -h` to check that the installation worked.
 
-## Configuration
+## API configuration
 
-1.  Required: edit `/etc/guppybot/api` with your API authentication details
+1.  Edit `/etc/guppybot/api` with your API authentication details
     (API ID + secret token).
-2.  Optional: `/etc/guppybot/machine` will be automatically filled with a
-    working default config, edit this if desired.
+2.  Next, run `guppyctl auth` to authenticate with the guppybot.org API server.
+3.  Finally, run `guppyctl register-machine` to register your local machine as
+    an automated worker for running tasks.
+
+## Optional configuration
+
+* `/etc/guppybot/machine` will be automatically filled with a working default
+  config, edit this if desired.
 
 ## License
 
