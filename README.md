@@ -9,6 +9,11 @@ Currently there are two executable tools:
 
 ## Installation
 
+The Guppybot tools are intended for use on Linux systems; non-Linux unix-like
+environments may work but are not currently supported.
+Building the Guppybot tools requires a recent Rust stable release (1.32.0 or
+newer). Install Rust using [rustup](https://rustup.rs/).
+
 1.  Build with `make`.
 2.  Do `sudo make install` to install the frontend to `/usr/local/bin/guppyctl`.
 3.  Run `guppyctl install-self` to finish the installation.
