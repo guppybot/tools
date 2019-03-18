@@ -12,5 +12,6 @@ extern crate tooling;
 pub(crate) mod cli;
 
 pub fn run_main(guppybot_bin: &[u8]) -> ! {
+  monosodium::init_sodium();
   cli::_dispatch(guppybot_bin)
 }

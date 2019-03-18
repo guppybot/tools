@@ -17,6 +17,7 @@ use std::process::{exit};
 pub mod daemon;
 
 pub fn run_main() -> ! {
+  monosodium::init_sodium();
   let code = match daemon::runloop() {
     Err(_) => 1,
     Ok(_) => 0,
