@@ -1,6 +1,6 @@
 # Guppybot: tools
 
-This repository contains tools used for automating local machines with GPUs.
+This repository contains tools used for automating GPU machines.
 
 Currently there are two executable tools:
 
