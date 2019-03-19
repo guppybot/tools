@@ -560,6 +560,9 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
         "task" => {
           panic!("must specify a directive version");
         }
+        "v0.run_prelude" => {
+          // TODO
+        }
         "v0.task" => {
           // FIXME: use `split_ascii_whitespace` as soon as stabilized:
           // https://github.com/rust-lang/rust/pull/58047

@@ -35,14 +35,6 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     .subcommand(SubCommand::with_name("echo-machine-id")
       .about("Print the registered machine identifier")
     )*/
-    .subcommand(SubCommand::with_name("install-self")
-      .about("Install guppybot")
-      .arg(Arg::with_name("DEBUG_ALT_SYSROOT")
-        .long("debug-alt-sysroot")
-        .takes_value(true)
-        .help("Debug option: alternative sysroot path. The default sysroot\npath is '/var/lib/guppybot'.")
-      )
-    )
     /*.subcommand(SubCommand::with_name("print-config")
       .about("Print the currently loaded configuration")
     )*/
@@ -92,6 +84,14 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     /*.subcommand(SubCommand::with_name("run")
       .about("")
     )*/
+    .subcommand(SubCommand::with_name("self-install")
+      .about("Install guppybot")
+      .arg(Arg::with_name("DEBUG_ALT_SYSROOT")
+        .long("debug-alt-sysroot")
+        .takes_value(true)
+        .help("Debug option: alternative sysroot path. The default sysroot\npath is '/var/lib/guppybot'.")
+      )
+    )
     .subcommand(SubCommand::with_name("tmp-run")
       .about("Run a local gup.py script in a local working directory")
       .arg(Arg::with_name("FILE")
@@ -149,17 +149,6 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
       match auth() {
         Err(e) => {
           eprintln!("auth: {:?}", e);
-          1
-        }
-        Ok(_) => 0,
-      }
-    }
-    ("install-self", Some(matches)) => {
-      let alt_sysroot_path = matches.value_of("DEBUG_ALT_SYSROOT")
-        .map(|s| PathBuf::from(s));
-      match install_self(alt_sysroot_path, guppybot_bin) {
-        Err(e) => {
-          eprintln!("install-self: {:?}", e);
           1
         }
         Ok(_) => 0,
@@ -232,6 +221,17 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     }
     /*("run", Some(matches)) => {
     }*/
+    ("self-install", Some(matches)) => {
+      let alt_sysroot_path = matches.value_of("DEBUG_ALT_SYSROOT")
+        .map(|s| PathBuf::from(s));
+      match install_self(alt_sysroot_path, guppybot_bin) {
+        Err(e) => {
+          eprintln!("self-install: {:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
     ("tmp-run", Some(matches)) => {
       let mutable = matches.is_present("MUTABLE");
       let stdout = matches.is_present("STDOUT");
