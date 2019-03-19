@@ -56,6 +56,8 @@ enum BotWsMsg {
 }
 
 struct BotWsConn {
+  delay_lo: f64,
+  delay_hi: f64,
   loopback_s: Sender<LoopbackMsg>,
   reg2bot_s: Sender<BotWsMsg>,
   reg_echo_ctr: Arc<AtomicUsize>,
@@ -64,8 +66,9 @@ struct BotWsConn {
 
 impl ws::Handler for BotWsConn {
   fn on_open(&mut self, _: ws::Handshake) -> ws::Result<()> {
-    eprintln!("TRACE: BotWsConn: on_open");
-    let delay_s_dist = Uniform::new_inclusive(3600.0, 5400.0);
+    eprintln!("TRACE: BotWsConn: on_open: delay interval: {:?} s {:?} s",
+        self.delay_lo, self.delay_hi);
+    let delay_s_dist = Uniform::new_inclusive(self.delay_lo, self.delay_hi);
     let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
     let echo_ctr = self.reg_echo_ctr.fetch_add(1, Ordering::Relaxed) + 1;
     self.registry_s.timeout(delay_ms as _, ws::util::Token(echo_ctr)).unwrap();
@@ -77,7 +80,7 @@ impl ws::Handler for BotWsConn {
   }
 
   fn on_message(&mut self, msg: ws::Message) -> ws::Result<()> {
-    let delay_s_dist = Uniform::new_inclusive(3600.0, 5400.0);
+    let delay_s_dist = Uniform::new_inclusive(self.delay_lo, self.delay_hi);
     let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
     let echo_ctr = self.reg_echo_ctr.fetch_add(1, Ordering::Relaxed) + 1;
     self.registry_s.timeout(delay_ms as _, ws::util::Token(echo_ctr)).unwrap();
@@ -354,8 +357,11 @@ impl Context {
     let reg2bot_s = self.reg2bot_s.clone();
     let reg_echo_ctr = self.reg_echo_ctr.clone();
     self.reg_conn_join_h = Some(spawn(move || {
+      eprintln!("TRACE: guppybot: connecting to registry...");
       match ws::connect("wss://guppybot.org:443/w/v1/", |registry_s| {
         BotWsConn{
+          delay_lo: 3600.0 - 900.0,
+          delay_hi: 3600.0 - 150.0,
           loopback_s: loopback_s.clone(),
           reg2bot_s: reg2bot_s.clone(),
           reg_echo_ctr: reg_echo_ctr.clone(),
