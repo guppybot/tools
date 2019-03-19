@@ -155,87 +155,99 @@ impl ImageSpec {
   }
 
   fn _to_nvidia_docker_base_image(&self) -> Option<String> {
-    match (self.distro_codename, self.cuda) {
-      (Centos6, Some(Cuda7_0)) => {
+    match (self.distro_codename, self.cuda.map(|v| (v.major, v.minor))) {
+      (Centos6, Some((7, 0))) => {
         Some("nvidia/cuda:7.0-devel-centos6".to_string())
       }
-      (Centos6, Some(Cuda7_5)) => {
+      (Centos6, Some((7, 5))) => {
         Some("nvidia/cuda:7.5-devel-centos6".to_string())
       }
-      (Centos6, Some(Cuda8_0)) => {
+      (Centos6, Some((8, 0))) => {
         Some("nvidia/cuda:8.0-devel-centos6".to_string())
       }
-      (Centos6, Some(Cuda9_0)) => {
+      (Centos6, Some((9, 0))) => {
         Some("nvidia/cuda:9.0-devel-centos6".to_string())
       }
-      (Centos6, Some(Cuda9_1)) => {
+      (Centos6, Some((9, 1))) => {
         Some("nvidia/cuda:9.1-devel-centos6".to_string())
       }
-      (Centos6, Some(Cuda9_2)) => {
+      (Centos6, Some((9, 2))) => {
         Some("nvidia/cuda:9.2-devel-centos6".to_string())
       }
-      (Centos6, Some(Cuda10_0)) => {
+      (Centos6, Some((10, 0))) => {
         Some("nvidia/cuda:10.0-devel-centos6".to_string())
+      }
+      (Centos6, Some((10, 1))) => {
+        Some("nvidia/cuda:10.1-devel-centos6".to_string())
       }
       (Centos7, None) => {
         Some("nvidia/driver:396.37-centos7".to_string())
       }
-      (Centos7, Some(Cuda7_0)) => {
+      (Centos7, Some((7, 0))) => {
         Some("nvidia/cuda:7.0-devel-centos7".to_string())
       }
-      (Centos7, Some(Cuda7_5)) => {
+      (Centos7, Some((7, 5))) => {
         Some("nvidia/cuda:7.5-devel-centos7".to_string())
       }
-      (Centos7, Some(Cuda8_0)) => {
+      (Centos7, Some((8, 0))) => {
         Some("nvidia/cuda:8.0-devel-centos7".to_string())
       }
-      (Centos7, Some(Cuda9_0)) => {
+      (Centos7, Some((9, 0))) => {
         Some("nvidia/cuda:9.0-devel-centos7".to_string())
       }
-      (Centos7, Some(Cuda9_1)) => {
+      (Centos7, Some((9, 1))) => {
         Some("nvidia/cuda:9.1-devel-centos7".to_string())
       }
-      (Centos7, Some(Cuda9_2)) => {
+      (Centos7, Some((9, 2))) => {
         Some("nvidia/cuda:9.2-devel-centos7".to_string())
       }
-      (Centos7, Some(Cuda10_0)) => {
+      (Centos7, Some((10, 0))) => {
         Some("nvidia/cuda:10.0-devel-centos7".to_string())
       }
-      (UbuntuTrusty, Some(Cuda6_5)) => {
+      (Centos7, Some((10, 1))) => {
+        Some("nvidia/cuda:10.1-devel-centos7".to_string())
+      }
+      (UbuntuTrusty, Some((6, 5))) => {
         Some("nvidia/cuda:6.5-devel-ubuntu14.04".to_string())
       }
-      (UbuntuTrusty, Some(Cuda7_0)) => {
+      (UbuntuTrusty, Some((7, 0))) => {
         Some("nvidia/cuda:7.0-devel-ubuntu14.04".to_string())
       }
-      (UbuntuTrusty, Some(Cuda7_5)) => {
+      (UbuntuTrusty, Some((7, 5))) => {
         Some("nvidia/cuda:7.5-devel-ubuntu14.04".to_string())
       }
-      (UbuntuTrusty, Some(Cuda8_0)) => {
+      (UbuntuTrusty, Some((8, 0))) => {
         Some("nvidia/cuda:8.0-devel-ubuntu14.04".to_string())
       }
       (UbuntuXenial, None) => {
         Some("nvidia/driver:396.37-ubuntu16.04".to_string())
       }
-      (UbuntuXenial, Some(Cuda8_0)) => {
+      (UbuntuXenial, Some((8, 0))) => {
         Some("nvidia/cuda:8.0-devel-ubuntu16.04".to_string())
       }
-      (UbuntuXenial, Some(Cuda9_0)) => {
+      (UbuntuXenial, Some((9, 0))) => {
         Some("nvidia/cuda:9.0-devel-ubuntu16.04".to_string())
       }
-      (UbuntuXenial, Some(Cuda9_1)) => {
+      (UbuntuXenial, Some((9, 1))) => {
         Some("nvidia/cuda:9.1-devel-ubuntu16.04".to_string())
       }
-      (UbuntuXenial, Some(Cuda9_2)) => {
+      (UbuntuXenial, Some((9, 2))) => {
         Some("nvidia/cuda:9.2-devel-ubuntu16.04".to_string())
       }
-      (UbuntuXenial, Some(Cuda10_0)) => {
+      (UbuntuXenial, Some((10, 0))) => {
         Some("nvidia/cuda:10.0-devel-ubuntu16.04".to_string())
       }
-      (UbuntuBionic, Some(Cuda9_2)) => {
+      (UbuntuXenial, Some((10, 1))) => {
+        Some("nvidia/cuda:10.1-devel-ubuntu16.04".to_string())
+      }
+      (UbuntuBionic, Some((9, 2))) => {
         Some("nvidia/cuda:9.2-devel-ubuntu18.04".to_string())
       }
-      (UbuntuBionic, Some(Cuda10_0)) => {
+      (UbuntuBionic, Some((10, 0))) => {
         Some("nvidia/cuda:10.0-devel-ubuntu18.04".to_string())
+      }
+      (UbuntuBionic, Some((10, 1))) => {
+        Some("nvidia/cuda:10.1-devel-ubuntu18.04".to_string())
       }
       _ => None,
     }
@@ -351,6 +363,7 @@ impl ImageManifest {
                   "v9_1" => CudaVersionV0{major: 9, minor: 1},
                   "v9_2" => CudaVersionV0{major: 9, minor: 2},
                   "v10_0" => CudaVersionV0{major: 10, minor: 0},
+                  "v10_1" => CudaVersionV0{major: 10, minor: 1},
                   _ => return Err(fail("bug: bad images manifest")),
                 };
                 builder.cuda = Some(v);

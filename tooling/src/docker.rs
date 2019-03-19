@@ -749,6 +749,7 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
                   "9.1" => CudaVersionV0{major: 9, minor: 1},
                   "9.2" => CudaVersionV0{major: 9, minor: 2},
                   "10.0" => CudaVersionV0{major: 10, minor: 0},
+                  "10.1" => CudaVersionV0{major: 10, minor: 1},
                   _ => return Err(fail("v0.task: unsupported cuda version")),
                 };
                 Some(code)
