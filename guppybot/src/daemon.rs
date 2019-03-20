@@ -25,7 +25,7 @@ use std::thread::{JoinHandle, sleep, spawn};
 use std::time::{Duration};
 
 pub fn runloop() -> Maybe {
-  Context::new()?._init()?.runloop()
+  Context::new()?._init(false)?.runloop()
 }
 
 fn base64_str_to_vec(len_bytes: usize, b64_str: &str) -> Option<Vec<u8>> {
@@ -371,7 +371,7 @@ impl Context {
     })
   }
 
-  fn _init(&mut self) -> Maybe<&mut Context> {
+  fn _init(&mut self, force: bool) -> Maybe<&mut Context> {
     let already_open = {
       let reconn = self.reconnect.lock();
       reconn.open
@@ -381,12 +381,12 @@ impl Context {
         eprintln!("TRACE: guppybot: init: failed to connect to registry");
       }
     }
-    if !self.auth && self.shared.read().root_manifest.auth_bit() {
+    if (force || !self.auth) && self.shared.read().root_manifest.auth_bit() {
       if self._retry_api_auth().is_none() {
         eprintln!("TRACE: guppybot: init: failed to authenticate with registry");
       }
     }
-    if !self.machine_reg && self.shared.read().root_manifest.mach_reg_bit() {
+    if (force || !self.machine_reg) && self.shared.read().root_manifest.mach_reg_bit() {
       match self.prepare_register_machine() {
         None => {
           eprintln!("TRACE: guppybot: init: failed to register machine with registry");
@@ -805,7 +805,7 @@ impl Context {
           }
           Ok(LoopbackMsg::_Echo2) => {
             eprintln!("TRACE: guppybot: trying to reconnect...");
-            self._init().ok();
+            self._init(true).ok();
           }
           Ok(LoopbackMsg::StartCiTask{api_key, ci_run_key, task_nr, task_name, taskspec}) => {
             if self.reg_sender.is_none() {
