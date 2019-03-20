@@ -3,7 +3,7 @@ use chrono::{SecondsFormat, Utc};
 use crossbeam_channel::{Sender, Receiver, unbounded};
 use monosodium::{auth_sign, auth_verify};
 use monosodium::util::{CryptoBuf};
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use rand::prelude::*;
 use rand::distributions::{Uniform};
 use schemas::{Revise, deserialize_revision, serialize_revision_into};
@@ -21,7 +21,8 @@ use std::io::{Read, Write, Cursor};
 use std::path::{PathBuf};
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::thread::{JoinHandle, spawn};
+use std::thread::{JoinHandle, sleep, spawn};
+use std::time::{Duration};
 
 pub fn runloop() -> Maybe {
   Context::new()?._init()?.runloop()
@@ -58,59 +59,30 @@ enum BotWsMsg {
 struct BotWsConn {
   delay_lo: f64,
   delay_hi: f64,
-  min_backoff_delay_lo: f64,
-  min_backoff_delay_hi: f64,
-  max_backoff_delay_lo: f64,
-  max_backoff_delay_hi: f64,
   loopback_s: Sender<LoopbackMsg>,
+  watchdog_s: Sender<WatchdogMsg>,
   reg2bot_s: Sender<BotWsMsg>,
   reg_echo_ctr: Arc<AtomicUsize>,
+  reconnect: Arc<Mutex<Reconnect>>,
   registry_s: ws::Sender,
-  open: bool,
-  backoff_count: i64,
-  backoff_delay_lo: f64,
-  backoff_delay_hi: f64,
 }
 
 impl BotWsConn {
-  pub fn new(loopback_s: Sender<LoopbackMsg>, reg2bot_s: Sender<BotWsMsg>, reg_echo_ctr: Arc<AtomicUsize>, registry_s: ws::Sender) -> BotWsConn {
+  pub fn new(loopback_s: Sender<LoopbackMsg>, watchdog_s: Sender<WatchdogMsg>, reg2bot_s: Sender<BotWsMsg>, reg_echo_ctr: Arc<AtomicUsize>, reconnect: Arc<Mutex<Reconnect>>, registry_s: ws::Sender) -> BotWsConn {
     BotWsConn{
       delay_lo: 3600.0 - 900.0,
       delay_hi: 3600.0 - 150.0,
-      min_backoff_delay_lo: 15.0,
-      min_backoff_delay_hi: 30.0,
-      max_backoff_delay_lo: 1800.0 - 300.0,
-      max_backoff_delay_hi: 1800.0 + 300.0,
       loopback_s,
+      watchdog_s,
       reg2bot_s,
       reg_echo_ctr,
+      reconnect,
       registry_s,
-      open: false,
-      backoff_count: 0,
-      backoff_delay_lo: 0.0,
-      backoff_delay_hi: 0.0,
     }
   }
 
   fn keepalive_delay_ms(&mut self) -> f64 {
     let delay_s_dist = Uniform::new_inclusive(self.delay_lo, self.delay_hi);
-    let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
-    delay_ms
-  }
-
-  fn backoff_delay_ms(&mut self) -> f64 {
-    match self.backoff_count {
-      0 => {
-        self.backoff_delay_lo = self.min_backoff_delay_lo;
-        self.backoff_delay_hi = self.min_backoff_delay_hi;
-      }
-      _ => {
-        self.backoff_delay_lo = self.max_backoff_delay_lo.min(2.0 * self.backoff_delay_lo);
-        self.backoff_delay_hi = self.max_backoff_delay_hi.min(2.0 * self.backoff_delay_hi);
-      }
-    }
-    self.backoff_count += 1;
-    let delay_s_dist = Uniform::new_inclusive(self.backoff_delay_lo, self.backoff_delay_hi);
     let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
     delay_ms
   }
@@ -120,10 +92,13 @@ impl ws::Handler for BotWsConn {
   fn on_open(&mut self, _: ws::Handshake) -> ws::Result<()> {
     eprintln!("TRACE: BotWsConn: on_open: delay interval: {:?} s {:?} s",
         self.delay_lo, self.delay_hi);
-    self.open = true;
-    self.backoff_count = 0;
+    {
+      let mut reconn = self.reconnect.lock();
+      reconn.open = true;
+    }
     let delay_ms = self.keepalive_delay_ms();
     let echo_ctr = self.reg_echo_ctr.fetch_add(1, Ordering::Relaxed) + 1;
+    self.watchdog_s.send(WatchdogMsg::_WsReset).unwrap();
     self.registry_s.timeout(delay_ms as _, ws::util::Token(echo_ctr)).unwrap();
     self.reg2bot_s.send(BotWsMsg::Open(BotWsSender{
       registry_s: self.registry_s.clone(),
@@ -133,8 +108,6 @@ impl ws::Handler for BotWsConn {
   }
 
   fn on_message(&mut self, msg: ws::Message) -> ws::Result<()> {
-    self.open = true;
-    self.backoff_count = 0;
     let delay_ms = self.keepalive_delay_ms();
     let echo_ctr = self.reg_echo_ctr.fetch_add(1, Ordering::Relaxed) + 1;
     self.registry_s.timeout(delay_ms as _, ws::util::Token(echo_ctr)).unwrap();
@@ -145,37 +118,25 @@ impl ws::Handler for BotWsConn {
   }
 
   fn on_shutdown(&mut self) {
-    // FIXME: try to reconnect.
     eprintln!("TRACE: BotWsConn: on_shutdown");
-    self.open = false;
-    let delay_ms = self.backoff_delay_ms();
-    self.registry_s.timeout(delay_ms as _, ws::util::Token(0)).unwrap();
+    self.watchdog_s.send(WatchdogMsg::_WsHup).unwrap();
     self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
   }
 
   fn on_close(&mut self, _: ws::CloseCode, _: &str) {
-    // FIXME: try to reconnect.
     eprintln!("TRACE: BotWsConn: on_close");
-    self.open = false;
-    let delay_ms = self.backoff_delay_ms();
-    self.registry_s.timeout(delay_ms as _, ws::util::Token(0)).unwrap();
+    self.watchdog_s.send(WatchdogMsg::_WsHup).unwrap();
     self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
   }
 
   fn on_error(&mut self, _: ws::Error) {
-    // FIXME: try to reconnect.
     eprintln!("TRACE: BotWsConn: on_error");
-    self.open = false;
-    let delay_ms = self.backoff_delay_ms();
-    self.registry_s.timeout(delay_ms as _, ws::util::Token(0)).unwrap();
+    self.watchdog_s.send(WatchdogMsg::_WsHup).unwrap();
     self.reg2bot_s.send(BotWsMsg::Error).unwrap();
   }
 
   fn on_timeout(&mut self, token: ws::util::Token) -> ws::Result<()> {
-    match self.open {
-      true  => self.loopback_s.send(LoopbackMsg::_Echo{echo_ctr: token.0}).unwrap(),
-      false => self.loopback_s.send(LoopbackMsg::_Echo2{open: self.open}).unwrap(),
-    }
+    self.loopback_s.send(LoopbackMsg::_Echo{echo_ctr: token.0}).unwrap();
     Ok(())
   }
 }
@@ -255,9 +216,7 @@ enum LoopbackMsg {
   _Echo{
     echo_ctr: usize,
   },
-  _Echo2{
-    open: bool,
-  },
+  _Echo2,
   StartCiTask{
     api_key: Vec<u8>,
     ci_run_key: Vec<u8>,
@@ -279,6 +238,11 @@ enum LoopbackMsg {
     task_nr: u64,
     failed: bool,
   },
+}
+
+enum WatchdogMsg {
+  _WsReset,
+  _WsHup,
 }
 
 enum WorkerLbMsg {
@@ -303,6 +267,17 @@ struct Shared {
   root_manifest: RootManifest,
 }
 
+struct Reconnect {
+  min_backoff_delay_lo: f64,
+  min_backoff_delay_hi: f64,
+  max_backoff_delay_lo: f64,
+  max_backoff_delay_hi: f64,
+  open: bool,
+  backoff_count: i64,
+  backoff_delay_lo: f64,
+  backoff_delay_hi: f64,
+}
+
 struct Context {
   shared: Arc<RwLock<Shared>>,
   system_setup: SystemSetupV0,
@@ -310,6 +285,8 @@ struct Context {
   machine_cfg: Option<MachineConfigV0>,
   loopback_r: Receiver<LoopbackMsg>,
   loopback_s: Sender<LoopbackMsg>,
+  watchdog_r: Receiver<WatchdogMsg>,
+  watchdog_s: Sender<WatchdogMsg>,
   workerlb_r: Receiver<WorkerLbMsg>,
   workerlb_s: Sender<WorkerLbMsg>,
   ctlchan_r: Receiver<CtlChannel>,
@@ -319,6 +296,7 @@ struct Context {
   reg_conn_join_h: Option<JoinHandle<()>>,
   reg_sender: Option<BotWsSender>,
   reg_echo_ctr: Arc<AtomicUsize>,
+  reconnect: Arc<Mutex<Reconnect>>,
   auth_maybe: bool,
   auth: bool,
   machine_reg_maybe: bool,
@@ -339,6 +317,7 @@ impl Context {
     let machine_cfg = MachineConfigV0::query().ok();
     eprintln!("TRACE: machine cfg: {:?}", machine_cfg);
     let (loopback_s, loopback_r) = unbounded();
+    let (watchdog_s, watchdog_r) = unbounded();
     let (workerlb_s, workerlb_r) = unbounded();
     let (ctlchan_s, ctlchan_r) = unbounded();
     let (reg2bot_s, reg2bot_r) = unbounded();
@@ -352,6 +331,8 @@ impl Context {
       machine_cfg,
       loopback_r,
       loopback_s,
+      watchdog_r,
+      watchdog_s,
       workerlb_r,
       workerlb_s,
       ctlchan_r,
@@ -361,6 +342,16 @@ impl Context {
       reg_conn_join_h: None,
       reg_sender: None,
       reg_echo_ctr: Arc::new(AtomicUsize::new(0)),
+      reconnect: Arc::new(Mutex::new(Reconnect{
+        min_backoff_delay_lo: 7.5,
+        min_backoff_delay_hi: 15.0,
+        max_backoff_delay_lo: 1800.0 - 300.0,
+        max_backoff_delay_hi: 1800.0 + 300.0,
+        open: false,
+        backoff_count: 0,
+        backoff_delay_lo: 0.0,
+        backoff_delay_hi: 0.0,
+      })),
       auth_maybe: false,
       auth: false,
       machine_reg_maybe: false,
@@ -370,8 +361,14 @@ impl Context {
   }
 
   fn _init(&mut self) -> Maybe<&mut Context> {
-    if self._reconnect_reg().is_none() {
-      eprintln!("TRACE: guppybot: init: failed to connect to registry");
+    let already_open = {
+      let reconn = self.reconnect.lock();
+      reconn.open
+    };
+    if !already_open {
+      if self._reconnect_reg().is_none() {
+        eprintln!("TRACE: guppybot: init: failed to connect to registry");
+      }
     }
     if !self.auth && self.shared.read().root_manifest.auth_bit() {
       if self._retry_api_auth().is_none() {
@@ -423,15 +420,19 @@ impl Context {
     }
     let api_cfg = self.api_cfg.as_ref().unwrap();
     let loopback_s = self.loopback_s.clone();
+    let watchdog_s = self.watchdog_s.clone();
     let reg2bot_s = self.reg2bot_s.clone();
     let reg_echo_ctr = self.reg_echo_ctr.clone();
+    let reconnect = self.reconnect.clone();
     self.reg_conn_join_h = Some(spawn(move || {
       eprintln!("TRACE: guppybot: connecting to registry...");
       match ws::connect("wss://guppybot.org:443/w/v1/", |registry_s| {
         BotWsConn::new(
           loopback_s.clone(),
+          watchdog_s.clone(),
           reg2bot_s.clone(),
           reg_echo_ctr.clone(),
+          reconnect.clone(),
           registry_s,
         )
       }) {
@@ -691,6 +692,44 @@ impl Context {
   pub fn runloop(&mut self) -> Maybe {
     let shared = self.shared.clone();
     let loopback_s = self.loopback_s.clone();
+    let watchdog_r = self.watchdog_r.clone();
+    let reconnect = self.reconnect.clone();
+    let watchdog_join_h = spawn(move || {
+      loop {
+        select! {
+          recv(watchdog_r) -> msg => match msg {
+            Err(_) => continue,
+            Ok(WatchdogMsg::_WsReset) => {
+              let mut reconn = reconnect.lock();
+              reconn.open = true;
+              reconn.backoff_count = 0;
+            }
+            Ok(WatchdogMsg::_WsHup) => {
+              let delay_s_dist = {
+                let mut reconn = reconnect.lock();
+                reconn.open = false;
+                match reconn.backoff_count {
+                  0 => {
+                    reconn.backoff_delay_lo = reconn.min_backoff_delay_lo;
+                    reconn.backoff_delay_hi = reconn.min_backoff_delay_hi;
+                  }
+                  _ => {
+                    reconn.backoff_delay_lo = reconn.max_backoff_delay_lo.min(2.0 * reconn.backoff_delay_lo);
+                    reconn.backoff_delay_hi = reconn.max_backoff_delay_hi.min(2.0 * reconn.backoff_delay_hi);
+                  }
+                }
+                reconn.backoff_count += 1;
+                Uniform::new_inclusive(reconn.backoff_delay_lo, reconn.backoff_delay_hi)
+              };
+              let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
+              sleep(Duration::from_millis(delay_ms as _));
+              loopback_s.send(LoopbackMsg::_Echo2).unwrap();
+            }
+          }
+        }
+      }
+    });
+    let loopback_s = self.loopback_s.clone();
     let workerlb_r = self.workerlb_r.clone();
     let worker_join_h = spawn(move || {
       let shared = shared;
@@ -756,10 +795,7 @@ impl Context {
               unreachable!();
             }
           }
-          Ok(LoopbackMsg::_Echo2{open}) => {
-            if open {
-              continue;
-            }
+          Ok(LoopbackMsg::_Echo2) => {
             eprintln!("TRACE: guppybot: trying to reconnect...");
             self._init().ok();
           }
@@ -1199,6 +1235,7 @@ impl Context {
         }
       }
     }
+    watchdog_join_h.join().ok();
     worker_join_h.join().ok();
     ctl_server_join_h.join().ok();
     if let Some(h) = reg_conn_join_h {
