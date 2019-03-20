@@ -27,6 +27,8 @@ fn main() {
     .arg("--numeric-owner")
     .arg("--owner=0")
     .arg("--group=0")
+    .arg("--exclude='*.swp'")
+    .arg("--exclude='*.swo'")
     .arg("-czf")
     .arg(build_dir.join("sysroot.tar.gz"))
     .arg(".")

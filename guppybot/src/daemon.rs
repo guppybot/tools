@@ -58,18 +58,71 @@ enum BotWsMsg {
 struct BotWsConn {
   delay_lo: f64,
   delay_hi: f64,
+  min_backoff_delay_lo: f64,
+  min_backoff_delay_hi: f64,
+  max_backoff_delay_lo: f64,
+  max_backoff_delay_hi: f64,
   loopback_s: Sender<LoopbackMsg>,
   reg2bot_s: Sender<BotWsMsg>,
   reg_echo_ctr: Arc<AtomicUsize>,
   registry_s: ws::Sender,
+  open: bool,
+  backoff_count: i64,
+  backoff_delay_lo: f64,
+  backoff_delay_hi: f64,
+}
+
+impl BotWsConn {
+  pub fn new(loopback_s: Sender<LoopbackMsg>, reg2bot_s: Sender<BotWsMsg>, reg_echo_ctr: Arc<AtomicUsize>, registry_s: ws::Sender) -> BotWsConn {
+    BotWsConn{
+      delay_lo: 3600.0 - 900.0,
+      delay_hi: 3600.0 - 150.0,
+      min_backoff_delay_lo: 15.0,
+      min_backoff_delay_hi: 30.0,
+      max_backoff_delay_lo: 1800.0 - 300.0,
+      max_backoff_delay_hi: 1800.0 + 300.0,
+      loopback_s,
+      reg2bot_s,
+      reg_echo_ctr,
+      registry_s,
+      open: false,
+      backoff_count: 0,
+      backoff_delay_lo: 0.0,
+      backoff_delay_hi: 0.0,
+    }
+  }
+
+  fn keepalive_delay_ms(&mut self) -> f64 {
+    let delay_s_dist = Uniform::new_inclusive(self.delay_lo, self.delay_hi);
+    let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
+    delay_ms
+  }
+
+  fn backoff_delay_ms(&mut self) -> f64 {
+    match self.backoff_count {
+      0 => {
+        self.backoff_delay_lo = self.min_backoff_delay_lo;
+        self.backoff_delay_hi = self.min_backoff_delay_hi;
+      }
+      _ => {
+        self.backoff_delay_lo = self.max_backoff_delay_lo.min(2.0 * self.backoff_delay_lo);
+        self.backoff_delay_hi = self.max_backoff_delay_hi.min(2.0 * self.backoff_delay_hi);
+      }
+    }
+    self.backoff_count += 1;
+    let delay_s_dist = Uniform::new_inclusive(self.backoff_delay_lo, self.backoff_delay_hi);
+    let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
+    delay_ms
+  }
 }
 
 impl ws::Handler for BotWsConn {
   fn on_open(&mut self, _: ws::Handshake) -> ws::Result<()> {
     eprintln!("TRACE: BotWsConn: on_open: delay interval: {:?} s {:?} s",
         self.delay_lo, self.delay_hi);
-    let delay_s_dist = Uniform::new_inclusive(self.delay_lo, self.delay_hi);
-    let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
+    self.open = true;
+    self.backoff_count = 0;
+    let delay_ms = self.keepalive_delay_ms();
     let echo_ctr = self.reg_echo_ctr.fetch_add(1, Ordering::Relaxed) + 1;
     self.registry_s.timeout(delay_ms as _, ws::util::Token(echo_ctr)).unwrap();
     self.reg2bot_s.send(BotWsMsg::Open(BotWsSender{
@@ -80,8 +133,9 @@ impl ws::Handler for BotWsConn {
   }
 
   fn on_message(&mut self, msg: ws::Message) -> ws::Result<()> {
-    let delay_s_dist = Uniform::new_inclusive(self.delay_lo, self.delay_hi);
-    let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
+    self.open = true;
+    self.backoff_count = 0;
+    let delay_ms = self.keepalive_delay_ms();
     let echo_ctr = self.reg_echo_ctr.fetch_add(1, Ordering::Relaxed) + 1;
     self.registry_s.timeout(delay_ms as _, ws::util::Token(echo_ctr)).unwrap();
     if let ws::Message::Binary(bin) = msg {
@@ -93,23 +147,35 @@ impl ws::Handler for BotWsConn {
   fn on_shutdown(&mut self) {
     // FIXME: try to reconnect.
     eprintln!("TRACE: BotWsConn: on_shutdown");
+    self.open = false;
+    let delay_ms = self.backoff_delay_ms();
+    self.registry_s.timeout(delay_ms as _, ws::util::Token(0)).unwrap();
     self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
   }
 
   fn on_close(&mut self, _: ws::CloseCode, _: &str) {
     // FIXME: try to reconnect.
     eprintln!("TRACE: BotWsConn: on_close");
+    self.open = false;
+    let delay_ms = self.backoff_delay_ms();
+    self.registry_s.timeout(delay_ms as _, ws::util::Token(0)).unwrap();
     self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
   }
 
   fn on_error(&mut self, _: ws::Error) {
     // FIXME: try to reconnect.
     eprintln!("TRACE: BotWsConn: on_error");
+    self.open = false;
+    let delay_ms = self.backoff_delay_ms();
+    self.registry_s.timeout(delay_ms as _, ws::util::Token(0)).unwrap();
     self.reg2bot_s.send(BotWsMsg::Error).unwrap();
   }
 
   fn on_timeout(&mut self, token: ws::util::Token) -> ws::Result<()> {
-    self.loopback_s.send(LoopbackMsg::_Echo{echo_ctr: token.0}).unwrap();
+    match self.open {
+      true  => self.loopback_s.send(LoopbackMsg::_Echo{echo_ctr: token.0}).unwrap(),
+      false => self.loopback_s.send(LoopbackMsg::_Echo2{open: self.open}).unwrap(),
+    }
     Ok(())
   }
 }
@@ -188,6 +254,9 @@ impl BotWsSender {
 enum LoopbackMsg {
   _Echo{
     echo_ctr: usize,
+  },
+  _Echo2{
+    open: bool,
   },
   StartCiTask{
     api_key: Vec<u8>,
@@ -359,14 +428,12 @@ impl Context {
     self.reg_conn_join_h = Some(spawn(move || {
       eprintln!("TRACE: guppybot: connecting to registry...");
       match ws::connect("wss://guppybot.org:443/w/v1/", |registry_s| {
-        BotWsConn{
-          delay_lo: 3600.0 - 900.0,
-          delay_hi: 3600.0 - 150.0,
-          loopback_s: loopback_s.clone(),
-          reg2bot_s: reg2bot_s.clone(),
-          reg_echo_ctr: reg_echo_ctr.clone(),
+        BotWsConn::new(
+          loopback_s.clone(),
+          reg2bot_s.clone(),
+          reg_echo_ctr.clone(),
           registry_s,
-        }
+        )
       }) {
         Err(_) => {
           eprintln!("TRACE: guppybot: failed to connect to registry");
@@ -663,6 +730,9 @@ impl Context {
         recv(self.loopback_r) -> msg => match msg {
           Err(_) => {}
           Ok(LoopbackMsg::_Echo{echo_ctr}) => {
+            if echo_ctr == 0 {
+              eprintln!("TRACE: guppybot: warning: got zero-valued echo");
+            }
             let reg_echo_ctr = self.reg_echo_ctr.load(Ordering::Relaxed);
             if echo_ctr != reg_echo_ctr {
             } else if echo_ctr == reg_echo_ctr {
@@ -685,6 +755,13 @@ impl Context {
             } else {
               unreachable!();
             }
+          }
+          Ok(LoopbackMsg::_Echo2{open}) => {
+            if open {
+              continue;
+            }
+            eprintln!("TRACE: guppybot: trying to reconnect...");
+            self._init().ok();
           }
           Ok(LoopbackMsg::StartCiTask{api_key, ci_run_key, task_nr, task_name, taskspec}) => {
             if self.reg_sender.is_none() {
