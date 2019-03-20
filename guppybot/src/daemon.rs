@@ -735,7 +735,10 @@ impl Context {
               };
               let delay_ms = thread_rng().sample(&delay_s_dist) * 1000.0;
               sleep(Duration::from_millis(delay_ms as _));
-              loopback_s.send(LoopbackMsg::_Echo2).unwrap();
+              let reconn = reconnect.lock();
+              if !reconn.open {
+                loopback_s.send(LoopbackMsg::_Echo2).unwrap();
+              }
             }
           }
         }
