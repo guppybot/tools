@@ -16,7 +16,7 @@ newer). Install Rust using [rustup](https://rustup.rs/).
 
 1.  Build with `make && sudo make install`. This installs the frontend to
     `/usr/local/bin/guppyctl`.
-2.  Run `guppyctl install-self` to install necessary files, including the daemon
+2.  Run `guppyctl self-install` to install necessary files, including the daemon
     which gets installed to `/usr/local/bin/guppybot`.
 3.  Run `sudo systemctl daemon-reload` followed by `sudo systemctl start guppybot`
     to start the daemon.
