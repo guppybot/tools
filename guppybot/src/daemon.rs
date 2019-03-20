@@ -379,21 +379,25 @@ impl Context {
     if !already_open {
       if self._reconnect_reg().is_none() {
         eprintln!("TRACE: guppybot: init: failed to connect to registry");
+        return Ok(self);
       }
     }
     if (force || !self.auth) && self.shared.read().root_manifest.auth_bit() {
       if self._retry_api_auth().is_none() {
         eprintln!("TRACE: guppybot: init: failed to authenticate with registry");
+        return Ok(self);
       }
     }
     if (force || !self.machine_reg) && self.shared.read().root_manifest.mach_reg_bit() {
       match self.prepare_register_machine() {
         None => {
           eprintln!("TRACE: guppybot: init: failed to register machine with registry");
+          return Ok(self);
         }
         Some((system_setup, machine_cfg)) => {
           if self.finish_register_machine(system_setup, machine_cfg).is_none() {
             eprintln!("TRACE: guppybot: init: failed to register machine with registry");
+            return Ok(self);
           }
         }
       }
