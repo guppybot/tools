@@ -95,10 +95,10 @@ impl ws::Handler for BotWsConn {
     {
       let mut reconn = self.reconnect.lock();
       reconn.open = true;
+      reconn.backoff_count = 0;
     }
     let delay_ms = self.keepalive_delay_ms();
     let echo_ctr = self.reg_echo_ctr.fetch_add(1, Ordering::Relaxed) + 1;
-    self.watchdog_s.send(WatchdogMsg::_WsReset).unwrap();
     self.registry_s.timeout(delay_ms as _, ws::util::Token(echo_ctr)).unwrap();
     self.reg2bot_s.send(BotWsMsg::Open(BotWsSender{
       registry_s: self.registry_s.clone(),
@@ -119,18 +119,30 @@ impl ws::Handler for BotWsConn {
 
   fn on_shutdown(&mut self) {
     eprintln!("TRACE: BotWsConn: on_shutdown");
+    {
+      let mut reconn = self.reconnect.lock();
+      reconn.open = false;
+    }
     self.watchdog_s.send(WatchdogMsg::_WsHup).unwrap();
     self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
   }
 
   fn on_close(&mut self, _: ws::CloseCode, _: &str) {
     eprintln!("TRACE: BotWsConn: on_close");
+    {
+      let mut reconn = self.reconnect.lock();
+      reconn.open = false;
+    }
     self.watchdog_s.send(WatchdogMsg::_WsHup).unwrap();
     self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
   }
 
   fn on_error(&mut self, _: ws::Error) {
     eprintln!("TRACE: BotWsConn: on_error");
+    {
+      let mut reconn = self.reconnect.lock();
+      reconn.open = false;
+    }
     self.watchdog_s.send(WatchdogMsg::_WsHup).unwrap();
     self.reg2bot_s.send(BotWsMsg::Error).unwrap();
   }
@@ -241,7 +253,6 @@ enum LoopbackMsg {
 }
 
 enum WatchdogMsg {
-  _WsReset,
   _WsHup,
 }
 
@@ -699,15 +710,12 @@ impl Context {
         select! {
           recv(watchdog_r) -> msg => match msg {
             Err(_) => continue,
-            Ok(WatchdogMsg::_WsReset) => {
-              let mut reconn = reconnect.lock();
-              reconn.open = true;
-              reconn.backoff_count = 0;
-            }
             Ok(WatchdogMsg::_WsHup) => {
               let delay_s_dist = {
                 let mut reconn = reconnect.lock();
-                reconn.open = false;
+                if reconn.open {
+                  continue;
+                }
                 match reconn.backoff_count {
                   0 => {
                     reconn.backoff_delay_lo = reconn.min_backoff_delay_lo;
