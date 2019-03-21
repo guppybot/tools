@@ -6,7 +6,7 @@ use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0};
 use semver::{Version};
 use serde_json::{Value as JsonValue};
 use tempfile::{NamedTempFile};
-use tooling::assets::{GUPPYBOT_SERVICE};
+use tooling::assets::{COMMIT_HASH, GUPPYBOT_SERVICE};
 use tooling::config::{Config, ApiConfig};
 use tooling::deps::{DockerDeps, Docker, NvidiaDocker2};
 use tooling::docker::{GitCheckoutSpec, DockerOutput, DockerRunStatus};
@@ -21,11 +21,21 @@ use std::io::{Write, stdin, stdout};
 use std::os::unix::fs::{PermissionsExt};
 use std::path::{PathBuf};
 use std::process::{Command, exit};
+use std::str;
 use std::time::{Instant};
 
 pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
+  let version_str = format!("beta (git: {})", str::from_utf8(COMMIT_HASH).unwrap());
   let mut app = App::new("guppyctl")
-    .version("beta")
+    .version(version_str.as_ref())
+    .subcommand(SubCommand::with_name("add-ci-repo")
+      .about("Add a remote repository for guppybot.org CI")
+      .arg(Arg::with_name("REPOSITORY_URL")
+        .index(1)
+        .required(true)
+        .help("The remote URL to the repository.")
+      )
+    )
     .subcommand(SubCommand::with_name("auth")
       .about("Authenticate with guppybot.org")
     )
@@ -59,23 +69,15 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         .help("The URL to the repository.")
       )
     )*/
-    .subcommand(SubCommand::with_name("register-ci-machine")
-      .about("Register this machine to run CI tasks for a repository")
+    .subcommand(SubCommand::with_name("subscribe-ci")
+      .about("Subscribe this machine to run CI tasks for a repository")
       .arg(Arg::with_name("REPOSITORY_URL")
         .index(1)
         .required(true)
         .help("The URL to the repository.")
       )
     )
-    .subcommand(SubCommand::with_name("register-ci-repo")
-      .about("Register a repository with guppybot.org CI")
-      .arg(Arg::with_name("REPOSITORY_URL")
-        .index(1)
-        .required(true)
-        .help("The URL to the repository.")
-      )
-    )
-    .subcommand(SubCommand::with_name("register-machine")
+    .subcommand(SubCommand::with_name("register")
       .about("Register this machine with guppybot.org")
     )
     .subcommand(SubCommand::with_name("reload-config")
@@ -145,6 +147,16 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     )
   ;
   let code = match app.clone().get_matches().subcommand() {
+    ("add-ci-repo", Some(matches)) => {
+      let repo_url = matches.value_of("REPOSITORY_URL");
+      match register_ci_repo(repo_url) {
+        Err(e) => {
+          eprintln!("register-ci-repo: {:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
     ("auth", Some(_matches)) => {
       match auth() {
         Err(e) => {
@@ -181,26 +193,6 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }*/
-    ("register-ci-machine", Some(matches)) => {
-      let repo_url = matches.value_of("REPOSITORY_URL");
-      match register_ci_machine(repo_url) {
-        Err(e) => {
-          eprintln!("register-ci-machine: {:?}", e);
-          1
-        }
-        Ok(_) => 0,
-      }
-    }
-    ("register-ci-repo", Some(matches)) => {
-      let repo_url = matches.value_of("REPOSITORY_URL");
-      match register_ci_repo(repo_url) {
-        Err(e) => {
-          eprintln!("register-ci-repo: {:?}", e);
-          1
-        }
-        Ok(_) => 0,
-      }
-    }
     ("register-machine", Some(matches)) => {
       match register_machine() {
         Err(e) => {
@@ -227,6 +219,16 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
       match install_self(alt_sysroot_path, guppybot_bin) {
         Err(e) => {
           eprintln!("self-install: {:?}", e);
+          1
+        }
+        Ok(_) => 0,
+      }
+    }
+    ("subscribe-ci", Some(matches)) => {
+      let repo_url = matches.value_of("REPOSITORY_URL");
+      match register_ci_machine(repo_url) {
+        Err(e) => {
+          eprintln!("register-ci-machine: {:?}", e);
           1
         }
         Ok(_) => 0,
