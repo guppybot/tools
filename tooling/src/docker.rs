@@ -560,7 +560,10 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
         "task" => {
           panic!("must specify a directive version");
         }
-        "v0.run_prelude" => {
+        "v0.pre_run" | "v0.run_prelude" => {
+          // TODO
+        }
+        "v0.post_run" => {
           // TODO
         }
         "v0.task" => {
