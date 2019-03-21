@@ -27,8 +27,11 @@ newer). Install Rust using [rustup](https://rustup.rs/).
     (API ID + secret token).
 2.  Next, run `sudo guppyctl auth` to authenticate with the guppybot.org API
     server.
-3.  Finally, run `sudo guppyctl register` to register your local machine as an
-    automated worker for running tasks.
+3.  Finally, run `sudo guppyctl register` to register your local machine with
+    the registry (https://guppybot.org). Your machine will then be registered
+    as an automated worker that is eligible to run tasks. Initially however,
+    your machine is not subscribed to any source of tasks, so your machine
+    will not run tasks until you specifically subscribe to a task source.
 
 ## Optional configuration
 
