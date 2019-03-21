@@ -34,6 +34,9 @@ newer). Install Rust using [rustup](https://rustup.rs/).
 
 * `/etc/guppybot/machine` will be automatically filled with a working default
   config, edit this if desired.
+  (Note: If your system configuration changes, or if you modify
+  `/etc/guppybot/machine`, just run `sudo guppyctl register` again to refresh
+  the registry's view of your local machine.)
 
 ## License
 
