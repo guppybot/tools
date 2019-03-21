@@ -25,8 +25,9 @@ newer). Install Rust using [rustup](https://rustup.rs/).
 
 1.  Edit `/etc/guppybot/api` with your API authentication details
     (API ID + secret token).
-2.  Next, run `guppyctl auth` to authenticate with the guppybot.org API server.
-3.  Finally, run `guppyctl register` to register your local machine as an
+2.  Next, run `sudo guppyctl auth` to authenticate with the guppybot.org API
+    server.
+3.  Finally, run `sudo guppyctl register` to register your local machine as an
     automated worker for running tasks.
 
 ## Optional configuration
