@@ -7,12 +7,19 @@ Currently there are two executable tools:
 * guppybot: a system daemon for automatically running tasks
 * guppyctl: a frontend tool that can be used standalone or with the daemon
 
-## Installation
+## Prerequisites
 
-The Guppybot tools are intended for use on Linux systems with systemd.
-Non-Linux, unix-like environments may work but are not currently supported.
 Building the Guppybot tools requires a recent Rust stable release (1.32.0 or
 newer). Install Rust using [rustup](https://rustup.rs/).
+
+Running tasks with Guppybot, either manually (via `guppyctl tmp-run`) or
+automatically (via the daemon), requires Docker, as well as nvidia-docker2
+for GPU-based runs.
+
+The Guppybot tools are intended for use on Linux systems with systemd.
+Non-Linux but unix-like environments _might_ work but are not supported.
+
+## Installation
 
 1.  Build with `make && sudo make install`. This installs the frontend to
     `/usr/local/bin/guppyctl`.
