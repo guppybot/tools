@@ -1,8 +1,7 @@
 #!/usr/bin/env sh
 set -eux
 
-rustc --version
-cargo --version
+python3 --version
 #apt-get update
 #apt-get install -y --no-install-recommends ca-certificates
 ln -s /checkout /work

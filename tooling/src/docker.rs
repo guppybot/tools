@@ -3,6 +3,7 @@ use crate::state::{ImageSpec, Toolchain, Sysroot};
 
 //use chrono::prelude::*;
 use crossbeam_channel::{Sender, bounded};
+use curl::easy::{Easy as CurlEasy, List as CurlList};
 use schemas::v1::{
   CudaVersionV0,
   DistroIdV0,
@@ -14,8 +15,8 @@ use url::{Url};
 
 use std::env::{current_dir};
 use std::fs::{File, create_dir_all};
-use std::io::{BufRead, Read, Write, BufReader, BufWriter};
-use std::path::{Path, PathBuf};
+use std::io::{BufRead, Read, Write, BufReader, BufWriter, Cursor};
+use std::path::{Path, PathBuf, Component};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::str::{from_utf8};
@@ -278,7 +279,7 @@ impl DockerImage {
     unimplemented!();
   }
 
-  pub fn _run_taskspec(&self, checkout: &GitCheckoutSpec, sysroot: &Sysroot) -> Maybe<Vec<TaskSpec>> {
+  pub fn _run_spec(&self, checkout: &GitCheckoutSpec, sysroot: &Sysroot) -> Maybe<(Vec<u8>, Vec<TaskSpec>)> {
     let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir(sysroot);
     let mut cmd = Command::new("docker");
     cmd
@@ -297,10 +298,10 @@ impl DockerImage {
       .arg("--attach").arg("stdin")
       .arg("--attach").arg("stdout")
       .arg("--attach").arg("stderr")
-      .arg("--volume").arg(format!("{}:/python:ro", sysroot.base_dir.join("python3.6/site-packages").display()))
+      .arg("--volume").arg(format!("{}:/_python:ro", sysroot.base_dir.join("python3.6/site-packages").display()))
       .arg("--volume").arg(format!("{}:/checkout:ro", checkout.dir.path().display()))
       .arg("--volume").arg(format!("{}:/entry.sh:ro", toolchain_dir.join("_run_taskspec.sh").display()))
-      .arg("--env").arg("PYTHONPATH=/python")
+      .arg("--env").arg("PYTHONPATH=/_python")
       .arg("--env").arg("CI=1")
       .arg(format!("gup/{}", self.hash_digest))
       .arg("/entry.sh")
@@ -309,16 +310,16 @@ impl DockerImage {
     ;
     let mut proc = cmd.spawn()
       .map_err(|_| fail("taskspec: failed to run `docker run`"))?;
-    let tasks = if let Some(ref mut stdout) = proc.stdout {
-      match _taskspecs(stdout) {
+    let (out, tasks) = if let Some(ref mut stdout) = proc.stdout {
+      match _taskspecs(stdout, sysroot) {
         Err(e) => {
           proc.wait().ok();
           return Err(e);
         }
-        Ok(tasks) => tasks,
+        Ok((out, tasks)) => (out, tasks),
       }
     } else {
-      Vec::new()
+      (Vec::new(), Vec::new())
     };
     if let Some(ref mut stderr) = proc.stderr {
       let mut buf = String::new();
@@ -332,7 +333,7 @@ impl DockerImage {
       .map_err(|_| fail("taskspec: failed to wait for `docker run`"))?;
     match status.success() {
       false => Err(fail("taskspec: `docker run` exited with nonzero status")),
-      true  => Ok(tasks)
+      true  => Ok((out, tasks))
     }
   }
 
@@ -355,10 +356,10 @@ impl DockerImage {
       .arg("--attach").arg("stdin")
       .arg("--attach").arg("stdout")
       .arg("--attach").arg("stderr")
-      .arg("--volume").arg(format!("{}:/python:ro", sysroot.base_dir.join("python3.6/site-packages").display()))
+      .arg("--volume").arg(format!("{}:/_python:ro", sysroot.base_dir.join("python3.6/site-packages").display()))
       .arg("--volume").arg(format!("{}:/gup.py:ro", gup_py_path.display()))
       .arg("--volume").arg(format!("{}:/entry.sh:ro", toolchain_dir.join("_run_taskspec_direct.sh").display()))
-      .arg("--env").arg("PYTHONPATH=/python")
+      .arg("--env").arg("PYTHONPATH=/_python")
       .arg("--env").arg("CI=1")
       .arg(format!("gup/{}", self.hash_digest))
       .arg("/entry.sh")
@@ -368,12 +369,12 @@ impl DockerImage {
     let mut proc = cmd.spawn()
       .map_err(|_| fail("failed to run `docker run`"))?;
     let tasks = if let Some(ref mut stdout) = proc.stdout {
-      match _taskspecs(stdout) {
+      match _taskspecs(stdout, sysroot) {
         Err(e) => {
           proc.wait().ok();
           return Err(e);
         }
-        Ok(tasks) => tasks,
+        Ok((_, tasks)) => tasks,
       }
     } else {
       Vec::new()
@@ -394,7 +395,7 @@ impl DockerImage {
     Ok(tasks)
   }
 
-  pub fn run(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, sysroot: &Sysroot, mut output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
+  pub fn run(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, sysroot: &Sysroot, output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
     let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir(sysroot);
     // FIXME
     //let distro_toolchain_dir = toolchain_dir.join(self.imagespec.distro_codename.to_desc_str());
@@ -434,6 +435,7 @@ impl DockerImage {
       .arg("--attach").arg("stdin")
       .arg("--attach").arg("stdout")
       .arg("--attach").arg("stderr")
+      .arg("--volume").arg(format!("{}:/mutable_cache:ro", sysroot.base_dir.join("mutable_cache").display()))
       .arg("--volume").arg(format!("{}:/checkout:ro", checkout.dir.path().display()))
       .arg("--volume").arg(format!("{}:/task:ro", task_file.path().display()))
       .arg("--volume").arg(format!("{}:/entry.sh:ro", toolchain_dir.join("run.sh").display()))
@@ -468,7 +470,7 @@ impl DockerImage {
     }
   }
 
-  pub fn run_mut(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, sysroot: &Sysroot, mut output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
+  pub fn run_mut(&self, checkout: &GitCheckoutSpec, task: &TaskSpec, sysroot: &Sysroot, output: Option<DockerOutput>) -> Maybe<DockerRunStatus> {
     let toolchain_dir = self.imagespec.to_toolchain_docker_template_dir(sysroot);
     // FIXME
     //let distro_toolchain_dir = toolchain_dir.join(self.imagespec.distro_codename.to_desc_str());
@@ -508,6 +510,7 @@ impl DockerImage {
       .arg("--attach").arg("stdin")
       .arg("--attach").arg("stdout")
       .arg("--attach").arg("stderr")
+      .arg("--volume").arg(format!("{}:/mutable_cache:ro", sysroot.base_dir.join("mutable_cache").display()))
       .arg("--volume").arg(format!("{}:/checkout:rw", checkout.dir.path().display()))
       .arg("--volume").arg(format!("{}:/task:ro", task_file.path().display()))
       .arg("--volume").arg(format!("{}:/entry.sh:ro", toolchain_dir.join("run_mut.sh").display()))
@@ -546,19 +549,84 @@ impl DockerImage {
 pub struct DockerPreImage {
 }
 
-fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
+fn _taskspecs<R: Read>(stdout: &mut R, sysroot: &Sysroot) -> Maybe<(Vec<u8>, Vec<TaskSpec>)> {
   let mut tasks = Vec::new();
-  let mut builder: Option<TaskSpecBuilder> = None;
-  let buf = BufReader::new(stdout);
-  for line in buf.lines() {
-    let line = line.map_err(|_| fail("failed to understand task spec"))?;
+  let mut task_builder: Option<TaskSpecBuilder> = None;
+  let mut raw_out = Vec::with_capacity(4096);
+  stdout.read_to_end(&mut raw_out)
+    .map_err(|_| fail("failed to read gup.py output"))?;
+  let mut cursor = Cursor::new(&raw_out);
+  for line in cursor.lines() {
+    let line = line.map_err(|_| fail("failed to understand gup.py output"))?;
     let line_toks: Vec<_> = line.splitn(2, "#-guppy:").collect();
     if line_toks.len() == 2 && line_toks[0].is_empty() {
       //eprintln!("DEBUG: directive? line toks: {:?}", line_toks);
       let directive_toks: Vec<_> = line_toks[1].splitn(2, ":").collect();
       match directive_toks[0] {
-        "task" => {
-          panic!("must specify a directive version");
+        "v0.mutable_cache" => {
+          // FIXME: use `split_ascii_whitespace` as soon as stabilized:
+          // https://github.com/rust-lang/rust/pull/58047
+          let cache_toks: Vec<_> = directive_toks[1].split_whitespace().collect();
+          match cache_toks[0] {
+            "append" => {
+              if cache_toks.len() <= 2 {
+                return Err(fail("gup.py: v0.mutable_cache:append takes at least 2 arguments"));
+              }
+              let mut file_path = sysroot.base_dir.join("mutable_cache");
+              for comp in PathBuf::from(cache_toks[1]).components() {
+                match comp {
+                  Component::Normal(c) => {
+                    file_path.push(c);
+                  }
+                  _ => {
+                    return Err(fail("gup.py: v0.mutable_cache:append: invalid path"));
+                  }
+                }
+              }
+              match cache_toks[2] {
+                "fetch_only" => {
+                  if cache_toks.len() <= 3 {
+                    return Err(fail("gup.py: v0.mutable_cache:append: fetch_only missing url argument"));
+                  }
+                  match File::open(&file_path) {
+                    Ok(_) => {}
+                    Err(_) => {
+                      let mut new_file = match File::create(&file_path) {
+                        Err(_) => return Err(fail("gup.py: v0.mutable_cache:append: failed to open new file")),
+                        Ok(f) => f,
+                      };
+                      let mut writer = BufWriter::new(new_file);
+                      {
+                        let mut headers = CurlList::new();
+                        headers.append("Accept: application/octet-stream").unwrap();
+                        let mut ez = CurlEasy::new();
+                        ez.http_headers(headers).unwrap();
+                        ez.follow_location(true).unwrap();
+                        ez.url(cache_toks[3]).unwrap();
+                        {
+                          let mut xfer = ez.transfer();
+                          xfer.write_function(|data| {
+                            match writer.write_all(data) {
+                              Err(e) => panic!("gup.py: v0.mutable_cache:append: fetch_once: write error: {:?}", e),
+                              Ok(_) => {}
+                            }
+                            Ok(data.len())
+                          }).unwrap();
+                          xfer.perform().unwrap();
+                        }
+                      }
+                    }
+                  }
+                }
+                "copy_only" => {
+                }
+                "symlink_only" => {
+                }
+                _ => {}
+              }
+            }
+            _ => return Err(fail("gup.py syntax error")),
+          }
         }
         "v0.pre_run" | "v0.run_prelude" => {
           // TODO
@@ -566,31 +634,33 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
         "v0.post_run" => {
           // TODO
         }
+        "task" => {
+          panic!("gup.py syntax error: must specify a directive version");
+        }
         "v0.task" => {
           // FIXME: use `split_ascii_whitespace` as soon as stabilized:
           // https://github.com/rust-lang/rust/pull/58047
           let task_toks: Vec<_> = directive_toks[1].split_whitespace().collect();
           match task_toks[0] {
             "begin" => {
-              if builder.is_some() {
+              if task_builder.is_some() {
                 // TODO: fail.
-                return Err(fail("todo1"));
+                return Err(fail("gup.py syntax error"));
               }
-              builder = Some(TaskSpecBuilder::default());
+              task_builder = Some(TaskSpecBuilder::default());
             }
             "end" => {
-              if builder.is_none() {
+              if task_builder.is_none() {
                 // TODO: fail.
-                return Err(fail("todo2"));
+                return Err(fail("gup.py syntax error"));
               }
-              // FIXME
-              let builder = builder.take().unwrap();
-              tasks.push(builder.into_task()?);
+              let task_builder = task_builder.take().unwrap();
+              tasks.push(task_builder.into_task()?);
             }
             "name" => {
-              if builder.is_none() {
+              if task_builder.is_none() {
                 // TODO: fail.
-                return Err(fail("todo3"));
+                return Err(fail("gup.py syntax error"));
               }
               if task_toks.len() <= 1 {
                 return Err(fail("v0.task:name takes 1 argument"));
@@ -616,52 +686,52 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
               if iter_state != 2 {
                 panic!("bug");
               }
-              builder.as_mut().unwrap()
+              task_builder.as_mut().unwrap()
                 .name = iter.as_str().to_string();
             }
             "toolchain" => {
-              if builder.is_none() {
+              if task_builder.is_none() {
                 // TODO: fail.
-                return Err(fail("todo"));
+                return Err(fail("gup.py syntax error"));
               }
               if task_toks.len() <= 1 {
                 return Err(fail("v0.task:toolchain takes 1 argument"));
               }
-              let toolchain = match task_toks[1] {
-                "rust_nightly" => Toolchain::RustNightly,
-                _ => return Err(fail("v0.task: unsupported toolchain")),
+              let toolchain = match Toolchain::from_desc_str_no_builtin(task_toks[1]) {
+                Some(toolchain) => toolchain,
+                None => return Err(fail("v0.task: unsupported toolchain")),
               };
-              builder.as_mut().unwrap()
+              task_builder.as_mut().unwrap()
                 .toolchain = Some(toolchain);
             }
             "require_docker" => {
-              if builder.is_none() {
+              if task_builder.is_none() {
                 // TODO: fail.
-                return Err(fail("todo4"));
+                return Err(fail("gup.py syntax error"));
               }
               if task_toks.len() <= 1 {
                 return Err(fail("v0.task:require_docker takes 1 argument"));
               }
-              builder.as_mut().unwrap()
+              task_builder.as_mut().unwrap()
                 .require_docker = task_toks[1].parse()
                   .map_err(|_| fail("v0.task:require_docker takes boolean argument"))?;
             }
             "require_nvidia_docker" => {
-              if builder.is_none() {
+              if task_builder.is_none() {
                 // TODO: fail.
-                return Err(fail("todo5"));
+                return Err(fail("gup.py syntax error"));
               }
               if task_toks.len() <= 1 {
                 return Err(fail("v0.task:require_nvidia_docker takes 1 argument"));
               }
-              builder.as_mut().unwrap()
+              task_builder.as_mut().unwrap()
                 .require_nvidia_docker = task_toks[1].parse()
                   .map_err(|_| fail("v0.task:require_nvidia_docker takes boolean argument"))?;
             }
             "require_distro" => {
-              if builder.is_none() {
+              if task_builder.is_none() {
                 // TODO: fail.
-                return Err(fail("todo6"));
+                return Err(fail("gup.py syntax error"));
               }
               if task_toks.len() <= 2 {
                 return Err(fail("v0.task:require_distro takes 2 arguments"));
@@ -711,13 +781,13 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
                 (DistroIdV0::Ubuntu, "bionic") => DistroCodenameV0::UbuntuBionic,
                 _ => return Err(fail("v0.task: unsupported distro version")),
               };
-              builder.as_mut().unwrap()
+              task_builder.as_mut().unwrap()
                 .require_distro = Some((ver, code));
             }
             "require_cuda" => {
-              if builder.is_none() {
+              if task_builder.is_none() {
                 // TODO: fail.
-                return Err(fail("todo7"));
+                return Err(fail("gup.py syntax error"));
               }
               if task_toks.len() <= 1 {
                 return Err(fail("v0.task:require_cuda takes 1 argument"));
@@ -757,13 +827,13 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
                 };
                 Some(code)
               };
-              builder.as_mut().unwrap()
+              task_builder.as_mut().unwrap()
                 .require_cuda = Some((ver, maybe_code));
             }
             "require_gpu_arch" => {
-              if builder.is_none() {
+              if task_builder.is_none() {
                 // TODO: fail.
-                return Err(fail("todo8"));
+                return Err(fail("gup.py syntax error"));
               }
               if task_toks.len() <= 1 {
                 return Err(fail("v0.task:require_gpu_arch takes 1 argument"));
@@ -771,41 +841,39 @@ fn _taskspecs<R: Read>(stdout: &mut R) -> Maybe<Vec<TaskSpec>> {
               // TODO
               match task_toks[1] {
                 "*" => {}
-                _ => return Err(fail("todo")),
+                _ => return Err(fail("gup.py syntax error")),
               }
             }
             "allow_errors" => {
-              if builder.is_none() {
+              if task_builder.is_none() {
                 // TODO: fail.
-                return Err(fail("todo"));
+                return Err(fail("gup.py syntax error"));
               }
               if task_toks.len() <= 1 {
                 return Err(fail("v0.task:allow_errors takes 1 argument"));
               }
-              builder.as_mut().unwrap()
+              task_builder.as_mut().unwrap()
                 .allow_errors = task_toks[1].parse()
                   .map_err(|_| fail("v0.task:allow_errors takes boolean argument"))?;
             }
-            _ => return Err(fail("todo")),
+            _ => return Err(fail("gup.py syntax error")),
           }
         }
-        _ => return Err(fail("todo")),
+        _ => return Err(fail("gup.py syntax error")),
       }
     } else {
       //eprintln!("DEBUG: sh? line toks: {:?}", line_toks);
-      if builder.is_none() {
-        // TODO: fail.
-        return Err(fail("todo9"));
+      if task_builder.is_none() {
+        return Err(fail("gup.py syntax error"));
       }
-      builder.as_mut().unwrap()
+      task_builder.as_mut().unwrap()
         .sh.push(line);
     }
   }
-  if builder.is_some() {
-    // TODO: fail.
-    return Err(fail("todo10"));
+  if task_builder.is_some() {
+    return Err(fail("gup.py syntax error"));
   }
-  Ok(tasks)
+  Ok((raw_out, tasks))
 }
 
 struct MonitorJoin {

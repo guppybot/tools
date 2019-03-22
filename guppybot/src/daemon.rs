@@ -1102,7 +1102,7 @@ impl Context {
                   }
                   Ok(_) => {}
                 }
-                let tasks = match builtin_image._run_taskspec(&checkout, &shared.sysroot) {
+                let (_spec_out, tasks) = match builtin_image._run_spec(&checkout, &shared.sysroot) {
                   Err(e) => {
                     eprintln!("TRACE: guppybot: new ci run: taskspec failed: {:?}", e);
                     continue;
@@ -1129,7 +1129,6 @@ impl Context {
                   continue;
                 }
                 for task_idx in 0 .. task_count {
-                  // FIXME
                   let task_nr = task_idx + 1;
                   assert!(task_nr != 0);
                   self.workerlb_s.send(WorkerLbMsg::CiTask{

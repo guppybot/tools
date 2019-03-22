@@ -1,6 +1,6 @@
 use clap::{App, Arg, ArgMatches, SubCommand};
 use crossbeam_utils::{Backoff};
-use curl::easy::{Easy, List};
+//use curl::easy::{Easy, List};
 //use monosodium::{sign_verify};
 use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0};
 use semver::{Version};
