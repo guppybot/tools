@@ -2,6 +2,5 @@
 set -x
 make -C build
 mkdir -p dist
+cp build/guppybot dist/
 cp build/guppyctl dist/
-mkdir -p localdist
-cp build/guppybot localdist/
