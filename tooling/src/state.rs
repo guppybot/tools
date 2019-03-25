@@ -43,6 +43,7 @@ impl Index {
 pub enum Toolchain {
   //Custom(String),
   Builtin,
+  Python2,
   Python3,
   RustNightly,
 }
@@ -51,6 +52,7 @@ impl Toolchain {
   pub fn from_desc_str_nocustom(s: &str) -> Option<Toolchain> {
     match s {
       "_builtin" => Some(Toolchain::Builtin),
+      "python2" => Some(Toolchain::Python2),
       "python3" => Some(Toolchain::Python3),
       "rust_nightly" => Some(Toolchain::RustNightly),
       _ => None,
@@ -68,6 +70,7 @@ impl Toolchain {
     match self {
       //&Toolchain::Custom(ref s) => s,
       &Toolchain::Builtin => "_builtin",
+      &Toolchain::Python2 => "python2",
       &Toolchain::Python3 => "python3",
       &Toolchain::RustNightly => "rust_nightly",
     }.to_string()
