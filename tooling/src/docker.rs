@@ -403,16 +403,16 @@ impl DockerImage {
     let mut task_file = NamedTempFile::new()
       .map_err(|_| fail("failed to create temporary script file"))?;
     {
-      writeln!(task_file, "#!/bin/sh")
-        .map_err(|_| fail("failed to write to script file"))?;
-      writeln!(task_file, "set -u")
+      writeln!(task_file, "#!/bin/bash")
         .map_err(|_| fail("failed to write to script file"))?;
       writeln!(task_file, "set -x")
         .map_err(|_| fail("failed to write to script file"))?;
-      writeln!(task_file, "set -o pipefail")
+      writeln!(task_file, "set -u")
         .map_err(|_| fail("failed to write to script file"))?;
       if !task.allow_errors {
         writeln!(task_file, "set -e")
+          .map_err(|_| fail("failed to write to script file"))?;
+        writeln!(task_file, "set -o pipefail")
           .map_err(|_| fail("failed to write to script file"))?;
       }
       for sh in task.sh.iter() {
@@ -482,14 +482,18 @@ impl DockerImage {
     let mut task_file = NamedTempFile::new()
       .map_err(|_| fail("failed to create temporary script file"))?;
     {
-      writeln!(task_file, "#!/bin/sh")
+      writeln!(task_file, "#!/bin/bash")
         .map_err(|_| fail("failed to write to script file"))?;
-      if task.allow_errors {
-        writeln!(task_file, "set -ux")
-      } else {
-        writeln!(task_file, "set -eux")
+      writeln!(task_file, "set -x")
+        .map_err(|_| fail("failed to write to script file"))?;
+      writeln!(task_file, "set -u")
+        .map_err(|_| fail("failed to write to script file"))?;
+      if !task.allow_errors {
+        writeln!(task_file, "set -e")
+          .map_err(|_| fail("failed to write to script file"))?;
+        writeln!(task_file, "set -o pipefail")
+          .map_err(|_| fail("failed to write to script file"))?;
       }
-        .map_err(|_| fail("failed to write to script file"))?;
       for sh in task.sh.iter() {
         writeln!(task_file, "{}", sh)
           .map_err(|_| fail("failed to write to script file"))?;

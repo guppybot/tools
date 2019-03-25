@@ -777,8 +777,6 @@ impl Context {
         }
       }
     });
-    let mut reg_conn_join_h: Option<JoinHandle<()>> = None;
-    let mut reg_sender: Option<BotWsSender> = None;
     loop {
       select! {
         recv(self.loopback_r) -> msg => match msg {
@@ -1252,7 +1250,7 @@ impl Context {
     watchdog_join_h.join().ok();
     worker_join_h.join().ok();
     ctl_server_join_h.join().ok();
-    if let Some(h) = reg_conn_join_h {
+    if let Some(h) = self.reg_conn_join_h.take() {
       h.join().ok();
     }
     Ok(())
