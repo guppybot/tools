@@ -218,13 +218,19 @@ impl DockerImage {
     ;
     let mut proc = cmd.spawn()
       .map_err(|_| fail("failed to run `docker build`"))?;
-    //println!("### BEGIN MONITOR ###");
+    // FIXME: log the console output from building in case of failure.
     let mon_h = ConsoleMonitor::sink(proc.stdout.take().unwrap(), proc.stderr.take().unwrap());
-    // FIXME: check status.
-    proc.wait().ok();
+    /*let mon_h = {
+      ConsoleMonitor::serialize_to_stdout(proc.stdout.take().unwrap(), proc.stderr.take().unwrap())
+    };*/
+    let maybe_status = proc.wait();
     mon_h.join().ok();
-    //println!("### END MONITOR ###");
-    Ok(())
+    let status = maybe_status
+      .map_err(|_| fail("failed to wait for `docker build`"))?;
+    match status.success() {
+      false => Err(fail("`docker build` failed: double check your Dockerfile")),
+      true  => Ok(()),
+    }
   }
 
   pub fn _run_checkout(&self, checkout: &GitCheckoutSpec, sysroot: &Sysroot) -> Maybe {
@@ -592,9 +598,9 @@ fn _taskspecs<R: Read>(stdout: &mut R, sysroot: &Sysroot) -> Maybe<(Vec<u8>, Vec
                 }
               }
               match cache_toks[2] {
-                "fetch_only" => {
+                "fetch_once" => {
                   if cache_toks.len() <= 3 {
-                    return Err(fail("gup.py: v0.mutable_cache:append: fetch_only missing url argument"));
+                    return Err(fail("gup.py: v0.mutable_cache:append: fetch_once missing url argument"));
                   }
                   match File::open(&file_path) {
                     Ok(_) => {}
@@ -626,11 +632,15 @@ fn _taskspecs<R: Read>(stdout: &mut R, sysroot: &Sysroot) -> Maybe<(Vec<u8>, Vec
                     }
                   }
                 }
-                "copy_only" => {
+                "copy_once" => {
+                  eprintln!("TRACE: gup.py: v0.mutable_cache:append: unhandled op: copy_once");
                 }
-                "symlink_only" => {
+                "link_once" => {
+                  eprintln!("TRACE: gup.py: v0.mutable_cache:append: unhandled op: link_once");
                 }
-                _ => {}
+                _ => {
+                  eprintln!("TRACE: gup.py: v0.mutable_cache:append: unknown op");
+                }
               }
             }
             _ => return Err(fail("gup.py syntax error")),
