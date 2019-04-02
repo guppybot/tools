@@ -788,7 +788,7 @@ impl Context {
             let reg_echo_ctr = self.reg_echo_ctr.load(Ordering::Relaxed);
             if echo_ctr != reg_echo_ctr {
             } else if echo_ctr == reg_echo_ctr {
-              eprintln!("TRACE: guppybot: ping...");
+              //eprintln!("TRACE: guppybot: ping...");
               if self.reg_sender.is_none() {
                 continue;
               }
@@ -1040,7 +1040,7 @@ impl Context {
             };
             match msg {
               Registry2BotV0::_Pong => {
-                eprintln!("TRACE: guppybot: pong");
+                //eprintln!("TRACE: guppybot: pong");
               }
               Registry2BotV0::_NewCiRun{api_key, ci_run_key, repo_clone_url, originator, ref_full, commit_hash, runspec} => {
                 let mut api_id = String::new();
