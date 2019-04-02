@@ -28,8 +28,8 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
   let version_str = format!("beta (git: {})", str::from_utf8(COMMIT_HASH).unwrap());
   let mut app = App::new("guppyctl")
     .version(version_str.as_ref())
-    .subcommand(SubCommand::with_name("add-ci-repo")
-      .about("Add a remote repository for guppybot.org CI")
+    .subcommand(SubCommand::with_name("x-add-ci-repo")
+      .about("Experimental. Add a remote repository for guppybot.org CI")
       .arg(Arg::with_name("REPOSITORY_URL")
         .index(1)
         .required(true)
@@ -69,8 +69,8 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         .help("The URL to the repository.")
       )
     )*/
-    .subcommand(SubCommand::with_name("subscribe-ci")
-      .about("Subscribe this machine to run CI tasks for a repository")
+    .subcommand(SubCommand::with_name("x-subscribe-ci")
+      .about("Experimental. Subscribe this machine to run CI tasks for a repository")
       .arg(Arg::with_name("REPOSITORY_URL")
         .index(1)
         .required(true)
@@ -147,11 +147,11 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     )
   ;
   let code = match app.clone().get_matches().subcommand() {
-    ("add-ci-repo", Some(matches)) => {
+    ("x-add-ci-repo", Some(matches)) => {
       let repo_url = matches.value_of("REPOSITORY_URL");
       match register_ci_repo(repo_url) {
         Err(e) => {
-          eprintln!("register-ci-repo: {:?}", e);
+          eprintln!("x-add-ci-repo: {:?}", e);
           1
         }
         Ok(_) => 0,
@@ -224,11 +224,11 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
-    ("subscribe-ci", Some(matches)) => {
+    ("x-subscribe-ci", Some(matches)) => {
       let repo_url = matches.value_of("REPOSITORY_URL");
       match register_ci_machine(repo_url) {
         Err(e) => {
-          eprintln!("register-ci-machine: {:?}", e);
+          eprintln!("x-subscribe-ci: {:?}", e);
           1
         }
         Ok(_) => 0,
