@@ -1,6 +1,7 @@
 pub use self::{Ack::*};
 
 use crate::query::{Maybe, fail};
+use crate::state::{Sysroot};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, NativeEndian};
 use schemas::v1::{MachineConfigV0, SystemSetupV0};
@@ -147,9 +148,11 @@ pub struct CtlListener {
 }
 
 impl CtlListener {
-  //pub fn open(socket_path: &PathBuf) -> Maybe<CommChannel> {
-  pub fn open_default() -> Maybe<CtlListener> {
-    let socket_path = PathBuf::from("/var/run/guppybot.sock");
+  pub fn open(sysroot: &Sysroot) -> Maybe<CtlListener> {
+    CtlListener::open_path(&sysroot.sock_dir.join("guppybot.sock"))
+  }
+
+  pub fn open_path(socket_path: &PathBuf) -> Maybe<CtlListener> {
     let inner = UnixListener::bind(&socket_path)
       .or_else(|_| {
         fs::remove_file(&socket_path).ok();

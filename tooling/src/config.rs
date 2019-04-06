@@ -185,6 +185,12 @@ impl Default for Config {
 }
 
 impl Config {
+  pub fn with_dir(config_dir: PathBuf) -> Config {
+    Config{
+      config_dir,
+    }
+  }
+
   pub fn install_default(&self, gpus: &GpusV0) -> Maybe {
     create_dir_all(&self.config_dir)
       .map_err(|_| fail("failed to create configuration directory"))?;

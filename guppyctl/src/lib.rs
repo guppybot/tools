@@ -1,6 +1,7 @@
 extern crate clap;
 extern crate crossbeam_utils;
 //extern crate curl;
+extern crate dirs;
 extern crate monosodium;
 extern crate schemas;
 extern crate semver;

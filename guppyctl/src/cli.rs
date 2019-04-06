@@ -1,6 +1,7 @@
 use clap::{App, Arg, ArgMatches, SubCommand};
 use crossbeam_utils::{Backoff};
 //use curl::easy::{Easy, List};
+use dirs::{home_dir};
 //use monosodium::{sign_verify};
 use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0};
 use semver::{Version};
@@ -88,6 +89,11 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     )*/
     .subcommand(SubCommand::with_name("self-install")
       .about("Install guppybot")
+      .arg(Arg::with_name("USER")
+        .long("user")
+        .takes_value(false)
+        .help("User-mode installation. Installs to '$HOME/.guppybot'.")
+      )
       .arg(Arg::with_name("DEBUG_ALT_SYSROOT")
         .long("debug-alt-sysroot")
         .takes_value(true)
@@ -214,9 +220,10 @@ pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
     /*("run", Some(matches)) => {
     }*/
     ("self-install", Some(matches)) => {
+      let user = matches.is_present("USER");
       let alt_sysroot_path = matches.value_of("DEBUG_ALT_SYSROOT")
         .map(|s| PathBuf::from(s));
-      match install_self(alt_sysroot_path, guppybot_bin) {
+      match install_self(user, alt_sysroot_path, guppybot_bin) {
         Err(e) => {
           eprintln!("self-install: {:?}", e);
           1
@@ -466,35 +473,76 @@ pub fn install_deps() -> Maybe {
   Ok(())
 }
 
-pub fn install_self(alt_sysroot_path: Option<PathBuf>, guppybot_bin: &[u8]) -> Maybe {
+pub fn install_self(user: bool, alt_sysroot_path: Option<PathBuf>, guppybot_bin: &[u8]) -> Maybe {
+  let bot_dir = match user {
+    false => PathBuf::from("/usr/local/bin"),
+    true  => {
+      let d = home_dir()
+        .ok_or_else(|| fail("Failed to find user home directory"))?
+        .join(".guppybot")
+        .join("bin");
+      create_dir_all(&d).ok();
+      d
+    }
+  };
+  let bot_path = bot_dir.join("guppybot");
   {
-    let mut bot_file = File::create("/usr/local/bin/guppybot")
+    let mut bot_file = File::create(&bot_path)
       .map_err(|_| fail("Failed to create guppybot daemon: are you root?"))?;
     bot_file.write_all(guppybot_bin)
       .map_err(|_| fail("Failed to write guppybot daemon: are you root?"))?;
     bot_file.set_permissions(Permissions::from_mode(0o755))
       .map_err(|_| fail("Failed to set executable permissions on guppybot daemon: are you root?"))?;
   }
-  {
+  let mut installed_systemd = false;
+  if !user {
     let mut service_file = File::create("/etc/systemd/system/guppybot.service")
       .map_err(|_| fail("Failed to create guppybot service file: are you root?"))?;
     service_file.write_all(GUPPYBOT_SERVICE)
       .map_err(|_| fail("Failed to write guppybot service file: are you root?"))?;
+    installed_systemd = true;
   }
   let gpus = GpusV0::query()?;
-  let config = Config::default();
+  let config = match user {
+    false => Config::default(),
+    true  => {
+      let d = home_dir()
+        .ok_or_else(|| fail("Failed to find user home directory"))?
+        .join(".guppybot")
+        .join("conf");
+      create_dir_all(&d).ok();
+      Config::with_dir(d)
+    }
+  };
   config.install_default(&gpus)?;
   let sysroot = match alt_sysroot_path {
-    Some(base_dir) => Sysroot{base_dir},
-    None => Sysroot::default(),
+    Some(base_dir) => Sysroot{base_dir, sock_dir: PathBuf::from("/var/run")},
+    None => match user {
+      false => Sysroot::default(),
+      true  => {
+        let base_dir = home_dir()
+          .ok_or_else(|| fail("Failed to find user home directory"))?
+          .join(".guppybot")
+          .join("lib");
+        create_dir_all(&base_dir).ok();
+        let sock_dir = home_dir()
+          .ok_or_else(|| fail("Failed to find user home directory"))?
+          .join(".guppybot")
+          .join("run");
+        create_dir_all(&sock_dir).ok();
+        Sysroot{base_dir, sock_dir}
+      }
+    }
   };
   sysroot.install()?;
   println!("Self-installation complete!");
   println!("Guppybot-related files have been installed to:");
   println!();
   println!("    {}", config.config_dir.display());
-  println!("    /etc/systemd/system/guppybot.service");
-  println!("    /usr/local/bin/guppybot");
+  if installed_systemd {
+    println!("    /etc/systemd/system/guppybot.service");
+  }
+  println!("    {}", bot_path.display());
   println!("    {}", sysroot.base_dir.display());
   println!();
   Ok(())

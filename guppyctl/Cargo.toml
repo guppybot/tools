@@ -10,6 +10,7 @@ workspace = "../tools"
 clap = "~2.32.0"
 crossbeam-utils = "^0.6"
 #curl = "^0.4"
+dirs = "^1.0"
 monosodium = { path = "../monosodium" }
 schemas = { path = "../schemas" }
 semver = "^0.9"

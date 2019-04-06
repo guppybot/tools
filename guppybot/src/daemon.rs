@@ -762,9 +762,15 @@ impl Context {
         }
       }
     });
+    let shared = self.shared.clone();
     let ctlchan_s = self.ctlchan_s.clone();
     let ctl_server_join_h = spawn(move || {
-      let ctl_server = match CtlListener::open_default() {
+      let ctl_server = {
+        let shared = shared.read();
+        let &Shared{ref sysroot, ..} = &*shared;
+        CtlListener::open(sysroot)
+      };
+      let ctl_server = match ctl_server {
         Err(_) => panic!("failed to open unix socket listener"),
         Ok(server) => server,
       };

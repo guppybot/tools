@@ -601,12 +601,14 @@ impl RootManifest {
 
 pub struct Sysroot {
   pub base_dir: PathBuf,
+  pub sock_dir: PathBuf,
 }
 
 impl Default for Sysroot {
   fn default() -> Sysroot {
     Sysroot{
       base_dir: PathBuf::from("/var/lib/guppybot"),
+      sock_dir: PathBuf::from("/var/run"),
     }
   }
 }
