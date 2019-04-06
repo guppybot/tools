@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 workspace = ".."
 
 [dependencies]
+git_version = { path = "../../git_version" }
 guppybot-bin = { path = "../guppybot-bin" }
 guppyctl = { path = "../../guppyctl" }
 

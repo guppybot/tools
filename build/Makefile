@@ -6,6 +6,7 @@ all: deps guppybot guppyctl
 
 deps:
 	$(CARGO_BUILD) -p tooling --lib
+	$(CARGO_BUILD) -p guppybot --lib
 	$(CARGO_BUILD) -p guppyctl --lib
 
 guppybot: deps

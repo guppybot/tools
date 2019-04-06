@@ -2,7 +2,6 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use chrono::{SecondsFormat, Utc};
 use crossbeam_channel::{Sender, Receiver, unbounded};
 use dirs::{home_dir};
-use git_version::{COMMIT_HASH};
 use monosodium::{auth_sign, auth_verify};
 use monosodium::util::{CryptoBuf};
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
@@ -29,8 +28,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::{JoinHandle, sleep, spawn};
 use std::time::{Duration};
 
-pub fn runloop() -> Maybe {
-  Context::new()?._init(false)?.runloop()
+pub fn runloop(git_head_commit: &[u8]) -> Maybe {
+  Context::new(git_head_commit)?._init(false)?.runloop()
 }
 
 fn base64_str_to_vec(len_bytes: usize, b64_str: &str) -> Option<Vec<u8>> {
@@ -321,7 +320,7 @@ struct Context {
 }
 
 impl Context {
-  pub fn new() -> Maybe<Context> {
+  pub fn new(git_head_commit: &[u8]) -> Maybe<Context> {
     let args: Vec<_> = env::args().collect();
     let arg0 = args[0].clone();
     let mut user_arg = false;
@@ -330,7 +329,7 @@ impl Context {
         println!("usage: {} [-h|--help] [-V|--version] [-U|--user]", arg0);
         exit(0);
       } else if arg == "--version" || arg == "-V" {
-        println!("guppyctl (git: {})", str::from_utf8(COMMIT_HASH).unwrap());
+        println!("guppyctl (git: {})", str::from_utf8(git_head_commit).unwrap());
         exit(0);
       } else if arg == "--user" || arg == "-U" {
         user_arg = true;

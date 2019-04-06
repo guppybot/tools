@@ -2,7 +2,6 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use crossbeam_utils::{Backoff};
 //use curl::easy::{Easy, List};
 use dirs::{home_dir};
-use git_version::{COMMIT_HASH};
 //use monosodium::{sign_verify};
 use schemas::wire_protocol::{DistroInfoV0, GpusV0, MachineConfigV0};
 use semver::{Version};
@@ -26,8 +25,8 @@ use std::process::{Command, exit};
 use std::str;
 use std::time::{Instant};
 
-pub fn _dispatch(guppybot_bin: &[u8]) -> ! {
-  let version_str = format!("beta (git: {})", str::from_utf8(COMMIT_HASH).unwrap());
+pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
+  let version_str = format!("beta (git: {})", str::from_utf8(git_head_commit).unwrap());
   let mut app = App::new("guppyctl")
     .version(version_str.as_ref())
     .subcommand(SubCommand::with_name("x-add-ci-repo")
