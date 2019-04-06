@@ -5,6 +5,7 @@ extern crate chrono;
 #[macro_use] extern crate crossbeam_channel;
 extern crate ctrlc;
 extern crate dirs;
+extern crate git_version;
 extern crate monosodium;
 extern crate parking_lot;
 extern crate rand;

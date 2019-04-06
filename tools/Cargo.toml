@@ -1,2 +1,2 @@
 [workspace]
-members = ["../guppyctl", "../tooling", "guppybot-bin", "guppyctl-bin"]
+members = ["../git_version", "../guppybot", "../guppyctl", "../tooling", "guppybot-bin", "guppyctl-bin"]
