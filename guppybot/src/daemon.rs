@@ -1,6 +1,7 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use chrono::{SecondsFormat, Utc};
 use crossbeam_channel::{Sender, Receiver, unbounded};
+use dirs::{home_dir};
 use monosodium::{auth_sign, auth_verify};
 use monosodium::util::{CryptoBuf};
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
@@ -16,7 +17,8 @@ use tooling::query::{Maybe, Query, fail};
 use tooling::state::{ImageSpec, ImageManifest, RootManifest, Sysroot};
 
 use std::collections::{VecDeque};
-use std::fs::{File};
+use std::env;
+use std::fs::{File, create_dir_all};
 use std::io::{Read, Write, Cursor};
 use std::path::{PathBuf};
 use std::sync::{Arc};
@@ -317,7 +319,30 @@ struct Context {
 
 impl Context {
   pub fn new() -> Maybe<Context> {
-    let sysroot = Sysroot::default();
+    let args: Vec<_> = env::args().collect();
+    let mut user_arg = false;
+    for arg in args.into_iter() {
+      if arg == "--user" || arg == "-U" {
+        user_arg = true;
+        break;
+      }
+    }
+    let sysroot = match user_arg {
+      false => Sysroot::default(),
+      true  => {
+        let base_dir = home_dir()
+          .ok_or_else(|| fail("Failed to find user home directory"))?
+          .join(".guppybot")
+          .join("lib");
+        create_dir_all(&base_dir).ok();
+        let sock_dir = home_dir()
+          .ok_or_else(|| fail("Failed to find user home directory"))?
+          .join(".guppybot")
+          .join("run");
+        create_dir_all(&sock_dir).ok();
+        Sysroot{base_dir, sock_dir}
+      }
+    };
     eprintln!("TRACE: sysroot");
     let root_manifest = RootManifest::load(&sysroot)?;
     eprintln!("TRACE: root manifest");
