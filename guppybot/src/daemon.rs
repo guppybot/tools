@@ -21,6 +21,7 @@ use std::env;
 use std::fs::{File, create_dir_all};
 use std::io::{Read, Write, Cursor};
 use std::path::{PathBuf};
+use std::process::{exit};
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::{JoinHandle, sleep, spawn};
@@ -320,9 +321,13 @@ struct Context {
 impl Context {
   pub fn new() -> Maybe<Context> {
     let args: Vec<_> = env::args().collect();
+    let arg0 = args[0].clone();
     let mut user_arg = false;
     for arg in args.into_iter() {
-      if arg == "--user" || arg == "-U" {
+      if arg == "--help" || arg == "-h" {
+        println!("usage: {} [-h|--help] [-U|--user]", arg0);
+        exit(0);
+      } else if arg == "--user" || arg == "-U" {
         user_arg = true;
         break;
       }
