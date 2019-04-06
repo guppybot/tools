@@ -8,7 +8,6 @@ use std::process::{Command};
 
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
-  println!("cargo:rerun-if-changed=.git/HEAD");
   for entry in WalkDir::new("../sysroot") {
     let entry = entry.unwrap();
     println!("cargo:rerun-if-changed={}", entry.path().display());
