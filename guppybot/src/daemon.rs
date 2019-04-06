@@ -10,6 +10,7 @@ use rand::distributions::{Uniform};
 use schemas::{Revise, deserialize_revision, serialize_revision_into};
 use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2RegistryV0, Registry2BotV0, _NewCiRunV0, RegisterCiRepoV0};
 use serde::{Deserialize, Serialize};
+use tooling::assets::{COMMIT_HASH};
 use tooling::config::{ApiConfig, ApiAuth};
 use tooling::docker::*;
 use tooling::ipc::*;
@@ -22,6 +23,7 @@ use std::fs::{File, create_dir_all};
 use std::io::{Read, Write, Cursor};
 use std::path::{PathBuf};
 use std::process::{exit};
+use std::str;
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::{JoinHandle, sleep, spawn};
@@ -325,7 +327,10 @@ impl Context {
     let mut user_arg = false;
     for arg in args.into_iter() {
       if arg == "--help" || arg == "-h" {
-        println!("usage: {} [-h|--help] [-U|--user]", arg0);
+        println!("usage: {} [-h|--help] [-V|--version] [-U|--user]", arg0);
+        exit(0);
+      } else if arg == "--version" || arg == "-V" {
+        println!("guppyctl (git: {})", str::from_utf8(COMMIT_HASH).unwrap());
         exit(0);
       } else if arg == "--user" || arg == "-U" {
         user_arg = true;
