@@ -329,7 +329,7 @@ impl Context {
         println!("usage: {} [-h|--help] [-V|--version] [-U|--user]", arg0);
         exit(0);
       } else if arg == "--version" || arg == "-V" {
-        println!("guppyctl (git: {})", str::from_utf8(git_head_commit).unwrap());
+        println!("guppybot (git: {})", str::from_utf8(git_head_commit).unwrap());
         exit(0);
       } else if arg == "--user" || arg == "-U" {
         user_arg = true;
