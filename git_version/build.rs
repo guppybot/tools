@@ -5,7 +5,7 @@ use std::process::{Command};
 
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
-  println!("cargo:rerun-if-changed=.git/HEAD");
+  println!("cargo:rerun-if-changed=../.git/HEAD");
   let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
     .canonicalize().unwrap();
   eprintln!("TRACE: cargo manifest dir: {:?}", manifest_dir);
