@@ -195,7 +195,8 @@ impl CtlChannel {
         let d = user_prefix.clone().or_else(|| home_dir())
           .ok_or_else(|| fail("Failed to find user home directory"))?
           .join(".guppybot")
-          .join("run");
+          .join("run")
+          .join("guppybot.sock");
         d
       }
     };
