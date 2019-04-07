@@ -433,7 +433,7 @@ impl Context {
       let reconn = self.reconnect.lock();
       reconn.open
     };
-    if !already_open {
+    if force || (!already_open && (self.shared.read().root_manifest.auth_bit() || self.shared.read().root_manifest.mach_reg_bit())) {
       if self._reconnect_reg().is_none() {
         eprintln!("TRACE: guppybot: init: failed to connect to registry");
         return Ok(self);
