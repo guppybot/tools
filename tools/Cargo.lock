@@ -951,6 +951,7 @@ dependencies = [
  "chrono 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossbeam-channel 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "curl 0.4.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dirs 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "libloading 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "monosodium 0.1.0",

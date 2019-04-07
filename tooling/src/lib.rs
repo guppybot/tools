@@ -4,6 +4,7 @@ extern crate byteorder;
 extern crate chrono;
 #[macro_use] extern crate crossbeam_channel;
 extern crate curl;
+extern crate dirs;
 extern crate hex;
 extern crate libloading;
 extern crate monosodium;

@@ -39,6 +39,12 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
     )
     .subcommand(SubCommand::with_name("auth")
       .about("Authenticate with guppybot.org")
+      .arg(Arg::with_name("USER")
+        .short("U")
+        .long("user")
+        .takes_value(false)
+        .help("User-mode installation. Installs to the directory given by\n'--user-prefix'.")
+      )
     )
     /*.subcommand(SubCommand::with_name("echo-api-id")
       .about("Print the registered API identifier")
@@ -80,6 +86,12 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
     )
     .subcommand(SubCommand::with_name("register")
       .about("Register this machine with guppybot.org")
+      .arg(Arg::with_name("USER")
+        .short("U")
+        .long("user")
+        .takes_value(false)
+        .help("User-mode installation. Installs to the directory given by\n'--user-prefix'.")
+      )
     )
     .subcommand(SubCommand::with_name("reload-config")
       .about("Reload configuration")
@@ -180,8 +192,9 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }
-    ("auth", Some(_matches)) => {
-      match auth() {
+    ("auth", Some(matches)) => {
+      let user = matches.is_present("USER");
+      match auth(user) {
         Err(e) => {
           eprintln!("auth: {:?}", e);
           1
@@ -217,7 +230,8 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
       }
     }*/
     ("register-machine", Some(matches)) => {
-      match register_machine() {
+      let user = matches.is_present("USER");
+      match register_machine(user) {
         Err(e) => {
           eprintln!("register-machine: {:?}", e);
           1
@@ -331,10 +345,10 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
   exit(code)
 }
 
-fn _query_api_auth_config() -> Maybe<(Option<String>, Option<String>)> {
+fn _query_api_auth_config(user: bool) -> Maybe<(Option<String>, Option<String>)> {
   let mut old_api_id = None;
   let mut old_secret_token = None;
-  let mut chan = CtlChannel::open_default()?;
+  let mut chan = CtlChannel::open_user(user, None)?;
   chan.send(&Ctl2Bot::_QueryApiAuthConfig)?;
   match chan.recv()? {
     Bot2Ctl::_QueryApiAuthConfig(Some(res)) => {
@@ -348,7 +362,7 @@ fn _query_api_auth_config() -> Maybe<(Option<String>, Option<String>)> {
   Ok((old_api_id, old_secret_token))
 }
 
-fn _retry_api_auth(old_api_id: Option<String>, old_secret_token: Option<String>) -> Maybe {
+fn _retry_api_auth(user: bool, old_api_id: Option<String>, old_secret_token: Option<String>) -> Maybe {
   let mut new_api_id = None;
   let mut new_secret_token = None;
   if old_api_id.is_none() {
@@ -382,7 +396,7 @@ fn _retry_api_auth(old_api_id: Option<String>, old_secret_token: Option<String>)
   if new_api_id.is_some() || new_secret_token.is_some() {
     let api_id = api_id.unwrap();
     let secret_token = secret_token.unwrap();
-    let mut chan = CtlChannel::open_default()?;
+    let mut chan = CtlChannel::open_user(user, None)?;
     chan.send(&Ctl2Bot::_DumpApiAuthConfig{api_id, secret_token})?;
     match chan.recv()? {
       Bot2Ctl::_DumpApiAuthConfig(Some(_)) => {}
@@ -393,7 +407,7 @@ fn _retry_api_auth(old_api_id: Option<String>, old_secret_token: Option<String>)
     }
     chan.hup();
   }
-  let mut chan = CtlChannel::open_default()?;
+  let mut chan = CtlChannel::open_user(user, None)?;
   chan.send(&Ctl2Bot::_RetryApiAuth)?;
   match chan.recv()? {
     Bot2Ctl::_RetryApiAuth(Some(_)) => {}
@@ -405,7 +419,7 @@ fn _retry_api_auth(old_api_id: Option<String>, old_secret_token: Option<String>)
   chan.hup();
   let backoff = Backoff::new();
   loop {
-    let mut chan = CtlChannel::open_default()?;
+    let mut chan = CtlChannel::open_user(user, None)?;
     chan.send(&Ctl2Bot::_AckRetryApiAuth)?;
     let msg = chan.recv()?;
     chan.hup();
@@ -426,10 +440,10 @@ fn _retry_api_auth(old_api_id: Option<String>, old_secret_token: Option<String>)
   Ok(())
 }
 
-fn _query_api_auth_state() -> Maybe<(bool, bool)> {
+fn _query_api_auth_state(user: bool) -> Maybe<(bool, bool)> {
   let mut auth = false;
   let mut auth_bit = false;
-  let mut chan = CtlChannel::open_default()?;
+  let mut chan = CtlChannel::open_user(user, None)?;
   chan.send(&Ctl2Bot::_QueryApiAuthState)?;
   match chan.recv()? {
     Bot2Ctl::_QueryApiAuthState(Some(rep)) => {
@@ -445,24 +459,24 @@ fn _query_api_auth_state() -> Maybe<(bool, bool)> {
   Ok((auth, auth_bit))
 }
 
-fn _ensure_api_auth() -> Maybe {
-  let auth = _query_api_auth_state()
+fn _ensure_api_auth(user: bool) -> Maybe {
+  let auth = _query_api_auth_state(user)
     .and_then(|(auth, auth_bit)| match (auth, auth_bit) {
       (true,  true) => Ok(true),
       (false, true) => Ok(false),
       _ => Err(fail("not authenticated"))
     })?;
   if !auth {
-    let (api_id, secret_token) = _query_api_auth_config()?;
-    _retry_api_auth(api_id, secret_token)?;
+    let (api_id, secret_token) = _query_api_auth_config(user)?;
+    _retry_api_auth(user, api_id, secret_token)?;
     println!("Successfully authenticated.");
   }
   Ok(())
 }
 
-pub fn auth() -> Maybe {
-  let (api_id, secret_token) = _query_api_auth_config()?;
-  _retry_api_auth(api_id, secret_token)?;
+pub fn auth(user: bool) -> Maybe {
+  let (api_id, secret_token) = _query_api_auth_config(user)?;
+  _retry_api_auth(user, api_id, secret_token)?;
   println!("Successfully authenticated.");
   Ok(())
 }
@@ -583,7 +597,7 @@ pub fn register_ci_machine(repo_url: Option<&str>) -> Maybe {
     return Err(fail("missing repository URL"));
   }
   let repo_url = repo_url.unwrap().to_string();
-  _ensure_api_auth()?;
+  _ensure_api_auth(false)?;
   let mut chan = CtlChannel::open_default()?;
   chan.send(&Ctl2Bot::RegisterCiMachine{repo_url})?;
   let rep = match chan.recv()? {
@@ -623,7 +637,7 @@ pub fn register_ci_repo(repo_url: Option<&str>) -> Maybe {
     return Err(fail("missing repository URL"));
   }
   let repo_url = repo_url.unwrap().to_string();
-  _ensure_api_auth()?;
+  _ensure_api_auth(false)?;
   let mut chan = CtlChannel::open_default()?;
   chan.send(&Ctl2Bot::RegisterCiRepo{repo_url})?;
   let res = match chan.recv()? {
@@ -675,9 +689,9 @@ pub fn register_ci_repo(repo_url: Option<&str>) -> Maybe {
   Ok(())
 }
 
-pub fn register_machine() -> Maybe {
-  _ensure_api_auth()?;
-  let mut chan = CtlChannel::open_default()?;
+pub fn register_machine(user: bool) -> Maybe {
+  _ensure_api_auth(user)?;
+  let mut chan = CtlChannel::open_user(user, None)?;
   chan.send(&Ctl2Bot::RegisterMachine)?;
   let msg = chan.recv()?;
   chan.hup();
@@ -720,7 +734,7 @@ pub fn register_machine() -> Maybe {
   if !yes {
     return Err(fail("failed to register machine"));
   }
-  let mut chan = CtlChannel::open_default()?;
+  let mut chan = CtlChannel::open_user(user, None)?;
   chan.send(&Ctl2Bot::ConfirmRegisterMachine{
     system_setup,
     machine_cfg,
@@ -736,7 +750,7 @@ pub fn register_machine() -> Maybe {
   }
   let backoff = Backoff::new();
   loop {
-    let mut chan = CtlChannel::open_default()?;
+    let mut chan = CtlChannel::open_user(user, None)?;
     chan.send(&Ctl2Bot::AckRegisterMachine)?;
     let msg = chan.recv()?;
     chan.hup();

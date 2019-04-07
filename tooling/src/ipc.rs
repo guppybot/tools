@@ -4,6 +4,7 @@ use crate::query::{Maybe, fail};
 use crate::state::{Sysroot};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, NativeEndian};
+use dirs::{home_dir};
 use schemas::v1::{MachineConfigV0, SystemSetupV0};
 use serde::{Deserialize, Serialize};
 
@@ -184,6 +185,24 @@ pub struct CtlChannel {
 impl CtlChannel {
   pub fn open_default() -> Maybe<CtlChannel> {
     let socket_path = PathBuf::from("/var/run/guppybot.sock");
+    CtlChannel::open_path(&socket_path)
+  }
+
+  pub fn open_user(user: bool, user_prefix: Option<PathBuf>) -> Maybe<CtlChannel> {
+    let socket_path = match user {
+      false => PathBuf::from("/var/run/guppybot.sock"),
+      true  => {
+        let d = user_prefix.clone().or_else(|| home_dir())
+          .ok_or_else(|| fail("Failed to find user home directory"))?
+          .join(".guppybot")
+          .join("run");
+        d
+      }
+    };
+    CtlChannel::open_path(&socket_path)
+  }
+
+  pub fn open_path(socket_path: &PathBuf) -> Maybe<CtlChannel> {
     let mut buf = Vec::with_capacity(4096);
     for _ in 0 .. 4096 {
       buf.push(0);
