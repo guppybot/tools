@@ -637,6 +637,9 @@ impl Sysroot {
       .map_err(|_| fail("failed to install sysroot: are you root?"))?;
     create_dir_all(self.base_dir.join("images"))
       .map_err(|_| fail("failed to install sysroot: are you root?"))?;
+    RootManifest::load(self)
+      .or_else(|_| RootManifest::fresh(self))
+      .map_err(|_| fail("failed to install root manifest: are you root?"))?;
     Ok(())
   }
 
