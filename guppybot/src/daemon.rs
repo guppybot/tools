@@ -131,8 +131,8 @@ impl ws::Handler for BotWsConn {
     self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
   }
 
-  fn on_close(&mut self, _: ws::CloseCode, _: &str) {
-    eprintln!("TRACE: BotWsConn: on_close");
+  fn on_close(&mut self, code: ws::CloseCode, reason: &str) {
+    eprintln!("TRACE: BotWsConn: on_close: code: {:?} reason: {}", code, reason);
     {
       let mut reconn = self.reconnect.lock();
       reconn.open = false;
@@ -141,8 +141,8 @@ impl ws::Handler for BotWsConn {
     self.reg2bot_s.send(BotWsMsg::Hup).unwrap();
   }
 
-  fn on_error(&mut self, _: ws::Error) {
-    eprintln!("TRACE: BotWsConn: on_error");
+  fn on_error(&mut self, error: ws::Error) {
+    eprintln!("TRACE: BotWsConn: on_error: {:?}", error);
     {
       let mut reconn = self.reconnect.lock();
       reconn.open = false;
