@@ -10,10 +10,10 @@ use rand::distributions::{Uniform};
 use schemas::{Revise, deserialize_revision, serialize_revision_into};
 use schemas::v1::{DistroInfoV0, GpusV0, MachineConfigV0, SystemSetupV0, Bot2RegistryV0, Registry2BotV0, _NewCiRunV0, RegisterCiRepoV0};
 use serde::{Deserialize, Serialize};
-use tooling::config::{ApiConfig, ApiAuth};
+use tooling::config::{ApiConfig, ApiAuth, Config};
 use tooling::docker::*;
 use tooling::ipc::*;
-use tooling::query::{Maybe, Query, fail};
+use tooling::query::{Maybe, Open, Query, fail};
 use tooling::state::{ImageSpec, ImageManifest, RootManifest, Sysroot};
 
 use std::collections::{VecDeque};
@@ -279,6 +279,7 @@ enum Event {
 
 struct Shared {
   sysroot: Sysroot,
+  config: Config,
   root_manifest: RootManifest,
 }
 
@@ -323,28 +324,38 @@ impl Context {
   pub fn new(git_head_commit: &[u8]) -> Maybe<Context> {
     let args: Vec<_> = env::args().collect();
     let arg0 = args[0].clone();
+    let mut prev_arg = None;
     let mut user_arg = false;
+    let mut user_prefix_arg = None;
     for arg in args.into_iter() {
+      match prev_arg {
+        Some("--user-prefix") => {
+          user_prefix_arg = Some(PathBuf::from(&arg));
+        }
+        _ => {}
+      }
+      prev_arg = None;
       if arg == "--help" || arg == "-h" {
-        println!("usage: {} [-h|--help] [-V|--version] [-U|--user]", arg0);
+        println!("usage: {} [-h|--help] [-V|--version] [-U|--user] [--user-prefix <USER_PREFIX>]", arg0);
         exit(0);
       } else if arg == "--version" || arg == "-V" {
         println!("guppybot (git: {})", str::from_utf8(git_head_commit).unwrap());
         exit(0);
       } else if arg == "--user" || arg == "-U" {
         user_arg = true;
-        break;
+      } else if arg == "--user-prefix" {
+        prev_arg = Some("--user-prefix");
       }
     }
     let sysroot = match user_arg {
       false => Sysroot::default(),
       true  => {
-        let base_dir = home_dir()
+        let base_dir = user_prefix_arg.clone().or_else(|| home_dir())
           .ok_or_else(|| fail("Failed to find user home directory"))?
           .join(".guppybot")
           .join("lib");
         create_dir_all(&base_dir).ok();
-        let sock_dir = home_dir()
+        let sock_dir = user_prefix_arg.clone().or_else(|| home_dir())
           .ok_or_else(|| fail("Failed to find user home directory"))?
           .join(".guppybot")
           .join("run");
@@ -352,14 +363,25 @@ impl Context {
         Sysroot{base_dir, sock_dir}
       }
     };
+    let config = match user_arg {
+      false => Config::default(),
+      true  => {
+        let config_dir = user_prefix_arg.clone().or_else(|| home_dir())
+          .ok_or_else(|| fail("Failed to find user home directory"))?
+          .join(".guppybot")
+          .join("conf");
+        create_dir_all(&config_dir).ok();
+        Config{config_dir}
+      }
+    };
     eprintln!("TRACE: sysroot");
     let root_manifest = RootManifest::load(&sysroot)?;
     eprintln!("TRACE: root manifest");
     let system_setup = SystemSetupV0::query()?;
     eprintln!("TRACE: system setup: {:?}", system_setup);
-    let api_cfg = ApiConfig::open_default().ok();
+    let api_cfg = ApiConfig::open(&config).ok();
     eprintln!("TRACE: api cfg: {:?}", api_cfg);
-    let machine_cfg = MachineConfigV0::query().ok();
+    let machine_cfg = MachineConfigV0::open(&config).ok();
     eprintln!("TRACE: machine cfg: {:?}", machine_cfg);
     let (loopback_s, loopback_r) = unbounded();
     let (watchdog_s, watchdog_r) = unbounded();
@@ -369,6 +391,7 @@ impl Context {
     Ok(Context{
       shared: Arc::new(RwLock::new(Shared{
         sysroot,
+        config,
         root_manifest,
       })),
       system_setup,
@@ -1038,8 +1061,9 @@ impl Context {
                 Bot2Ctl::AckRegisterMachine(ack)
               }
               Ctl2Bot::ReloadConfig => {
-                self.api_cfg = ApiConfig::open_default().ok();
-                self.machine_cfg = MachineConfigV0::query().ok();
+                let shared = self.shared.read();
+                self.api_cfg = ApiConfig::open(&shared.config).ok();
+                self.machine_cfg = MachineConfigV0::open(&shared.config).ok();
                 Bot2Ctl::ReloadConfig(Some(()))
               }
               Ctl2Bot::UnregisterCiMachine => {
@@ -1109,6 +1133,8 @@ impl Context {
                 if self.reg_sender.is_none() {
                   continue;
                 }
+                // FIXME: if "local_machine.task_workers" is zero, redirect to a
+                // remote machine, if one is available, otherwise reject.
                 // FIXME: better error handling.
                 let shared = self.shared.read();
                 let checkout = match GitCheckoutSpec::with_remote_url(repo_clone_url) {
@@ -1154,7 +1180,7 @@ impl Context {
                 if self.reg_sender.as_mut().unwrap()
                   .send_auth(
                       self.api_cfg.as_ref().map(|api| &api.auth),
-                      &Bot2RegistryV0::_NewCiRun(Some(_NewCiRunV0{
+                      &Bot2RegistryV0::_NewCiRun(Some(_NewCiRunV0::Accept{
                         //api_key: api_cfg.auth.api_key.clone(),
                         api_key: api_key.clone(),
                         ci_run_key: ci_run_key.clone(),

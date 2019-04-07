@@ -93,7 +93,12 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
         .short("U")
         .long("user")
         .takes_value(false)
-        .help("User-mode installation. Installs to '$HOME/.guppybot'.")
+        .help("User-mode installation. Installs to the directory given by\n'--user-prefix'.")
+      )
+      .arg(Arg::with_name("USER_PREFIX")
+        .long("user-prefix")
+        .takes_value(true)
+        .help("User-mode installation prefix. Defaults to '$HOME/.guppybot'.")
       )
       .arg(Arg::with_name("DEBUG_ALT_SYSROOT")
         .long("debug-alt-sysroot")
@@ -137,7 +142,12 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
         .short("U")
         .long("user")
         .takes_value(false)
-        .help("User-mode. Assumes installation files are in '$HOME/.guppybot'.")
+        .help("User-mode. Assumes installation in the directory given by\n'--user-prefix'.")
+      )
+      .arg(Arg::with_name("USER_PREFIX")
+        .long("user-prefix")
+        .takes_value(true)
+        .help("User-mode prefix. Defaults to '$HOME/.guppybot'.")
       )
     )
     /*.subcommand(SubCommand::with_name("unauth")
@@ -228,9 +238,11 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
     }*/
     ("self-install", Some(matches)) => {
       let user = matches.is_present("USER");
+      let user_prefix = matches.value_of("USER_PREFIX")
+        .map(|s| PathBuf::from(s));
       let alt_sysroot_path = matches.value_of("DEBUG_ALT_SYSROOT")
         .map(|s| PathBuf::from(s));
-      match install_self(user, alt_sysroot_path, guppybot_bin) {
+      match install_self(user, user_prefix, alt_sysroot_path, guppybot_bin) {
         Err(e) => {
           eprintln!("self-install: {:?}", e);
           1
@@ -249,6 +261,9 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
       }
     }
     ("tmp-run", Some(matches)) => {
+      let user = matches.is_present("USER");
+      let user_prefix = matches.value_of("USER_PREFIX")
+        .map(|s| PathBuf::from(s));
       let mutable = matches.is_present("MUTABLE");
       let stdout = matches.is_present("STDOUT");
       let quiet = matches.is_present("QUIET");
@@ -261,7 +276,7 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
           &None => PathBuf::from("gup.py"),
           &Some(ref p) => p.join("gup.py"),
         });
-      match run_local(mutable, quiet, stdout, gup_py_path, working_dir) {
+      match run_local(user, user_prefix, mutable, quiet, stdout, gup_py_path, working_dir) {
         Err(e) => {
           eprintln!("run-local: {:?}", e);
           1
@@ -480,11 +495,11 @@ pub fn install_deps() -> Maybe {
   Ok(())
 }
 
-pub fn install_self(user: bool, alt_sysroot_path: Option<PathBuf>, guppybot_bin: &[u8]) -> Maybe {
+pub fn install_self(user: bool, user_prefix: Option<PathBuf>, alt_sysroot_path: Option<PathBuf>, guppybot_bin: &[u8]) -> Maybe {
   let bot_dir = match user {
     false => PathBuf::from("/usr/local/bin"),
     true  => {
-      let d = home_dir()
+      let d = user_prefix.clone().or_else(|| home_dir())
         .ok_or_else(|| fail("Failed to find user home directory"))?
         .join(".guppybot")
         .join("bin");
@@ -513,7 +528,7 @@ pub fn install_self(user: bool, alt_sysroot_path: Option<PathBuf>, guppybot_bin:
   let config = match user {
     false => Config::default(),
     true  => {
-      let d = home_dir()
+      let d = user_prefix.clone().or_else(|| home_dir())
         .ok_or_else(|| fail("Failed to find user home directory"))?
         .join(".guppybot")
         .join("conf");
@@ -527,12 +542,12 @@ pub fn install_self(user: bool, alt_sysroot_path: Option<PathBuf>, guppybot_bin:
     None => match user {
       false => Sysroot::default(),
       true  => {
-        let base_dir = home_dir()
+        let base_dir = user_prefix.clone().or_else(|| home_dir())
           .ok_or_else(|| fail("Failed to find user home directory"))?
           .join(".guppybot")
           .join("lib");
         create_dir_all(&base_dir).ok();
-        let sock_dir = home_dir()
+        let sock_dir = user_prefix.clone().or_else(|| home_dir())
           .ok_or_else(|| fail("Failed to find user home directory"))?
           .join(".guppybot")
           .join("run");
@@ -552,16 +567,6 @@ pub fn install_self(user: bool, alt_sysroot_path: Option<PathBuf>, guppybot_bin:
   println!("    {}", bot_path.display());
   println!("    {}", sysroot.base_dir.display());
   println!();
-  Ok(())
-}
-
-pub fn print_config() -> Maybe {
-  let api_cfg = ApiConfig::open_default().ok();
-  let machine_cfg = MachineConfigV0::query().ok();
-  //let ci_cfg = CiConfigV0::query().ok();
-  println!("API config: {:?}", api_cfg);
-  println!("Machine config: {:?}", machine_cfg);
-  //println!("CI config: {:?}", ci_cfg);
   Ok(())
 }
 
@@ -758,7 +763,7 @@ pub fn reload_config() -> Maybe {
   Ok(())
 }
 
-fn _run_local(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
+fn _run_local(user: bool, user_prefix: Option<PathBuf>, mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe<DockerRunStatus> {
   let run_start = Instant::now();
 
   let sysroot = Sysroot::default();
@@ -871,8 +876,8 @@ fn _run_local(mutable: bool, quiet: bool, stdout_: bool, gup_py_path: PathBuf, w
   Ok(DockerRunStatus::Success)
 }
 
-pub fn run_local(mutable: bool, quiet: bool, stdout: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
-  match _run_local(mutable, quiet, stdout, gup_py_path, working_dir)? {
+pub fn run_local(user: bool, user_prefix: Option<PathBuf>, mutable: bool, quiet: bool, stdout: bool, gup_py_path: PathBuf, working_dir: Option<PathBuf>) -> Maybe {
+  match _run_local(user, user_prefix, mutable, quiet, stdout, gup_py_path, working_dir)? {
     DockerRunStatus::Success => {
       Ok(())
     }

@@ -4,7 +4,7 @@ use self::config_toml::{
   CiConfig as CiToml,
 };
 
-use crate::query::{Maybe, Query, fail};
+use crate::query::{Maybe, Open, Query, fail};
 
 use schemas::v1::{
   GpusV0,
@@ -70,8 +70,16 @@ mod config_toml {
   }
 
   #[derive(Debug, Default, Deserialize)]
+  pub struct RemoteMachine {
+    pub machine_key: Option<String>,
+    pub run_driver: Option<String>,
+    pub user_prefix: Option<String>,
+  }
+
+  #[derive(Debug, Default, Deserialize)]
   pub struct MachineConfig {
     pub local_machine: Option<LocalMachine>,
+    pub remote_machine: Option<Vec<RemoteMachine>>,
   }
 
   impl MachineConfig {
@@ -137,13 +145,21 @@ pub struct ApiConfig {
   pub auth: ApiAuth,
 }
 
-impl ApiConfig {
-  pub fn open_default() -> Maybe<ApiConfig> {
-    let default_path = PathBuf::from("/etc/guppybot/api");
-    ApiConfig::open(&default_path)
-  }
+impl Open for ApiConfig {
+  type Context = Config;
 
-  pub fn open(path: &Path) -> Maybe<ApiConfig> {
+  fn open(config: &Config) -> Maybe<ApiConfig> {
+    ApiConfig::open_path(&config.config_dir.join("api"))
+  }
+}
+
+impl ApiConfig {
+  /*pub fn open_default() -> Maybe<ApiConfig> {
+    let default_path = PathBuf::from("/etc/guppybot/api");
+    ApiConfig::open_path(&default_path)
+  }*/
+
+  pub fn open_path(path: &Path) -> Maybe<ApiConfig> {
     let api = ApiToml::open(path)?;
     let auth = api.auth.unwrap_or_default();
     let auth = ApiAuth{
@@ -156,9 +172,11 @@ impl ApiConfig {
   }
 }
 
-impl Query for MachineConfigV0 {
-  fn query() -> Maybe<MachineConfigV0> {
-    let cfg = MachineToml::open(&PathBuf::from("/etc/guppybot/machine"))?;
+impl Open for MachineConfigV0 {
+  type Context = Config;
+
+  fn open(config: &Config) -> Maybe<MachineConfigV0> {
+    let cfg = MachineToml::open(&config.config_dir.join("machine"))?;
     let local_machine = cfg.local_machine.unwrap_or_default();
     let local_machine = LocalMachineV0{
       task_workers: local_machine.task_workers.unwrap_or_else(|| 1),
@@ -166,8 +184,13 @@ impl Query for MachineConfigV0 {
         .iter().map(|dev_str| LocalDeviceV0::PciSlot(dev_str.to_string()))
         .collect(),
     };
+    /*let remote_machines: Vec<_> = cfg.remote_machine.unwrap_or_else(|| Vec::new())
+      .into_iter().map(|rm| {
+        unimplemented!();
+      }).collect();*/
     Ok(MachineConfigV0{
       local_machine,
+      //remote_machines,
     })
   }
 }

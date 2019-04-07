@@ -62,6 +62,12 @@ pub fn which<S: AsRef<OsStr>>(cmd: S) -> Maybe<PathBuf> {
   }
 }
 
+pub trait Open {
+  type Context;
+
+  fn open(context: &Self::Context) -> Maybe<Self> where Self: Sized;
+}
+
 pub trait Query {
   fn query() -> Maybe<Self> where Self: Sized;
 }
