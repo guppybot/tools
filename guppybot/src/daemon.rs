@@ -443,7 +443,7 @@ impl Context {
     self.api_cfg.as_ref()
       .map(|api_cfg| {
         QueryApiAuthConfig{
-          api_id: Some(api_cfg.auth.api_id.clone()),
+          api_id: Some(api_cfg.auth.api_key.clone()),
           secret_token: Some(api_cfg.auth.secret_token.clone()),
         }
       })
@@ -520,7 +520,7 @@ impl Context {
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::Auth{
-            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_id) {
+            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_key) {
               None => return None,
               Some(buf) => buf,
             },
@@ -549,7 +549,7 @@ impl Context {
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::RegisterCiMachine{
-            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_id) {
+            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_key) {
               None => return None,
               Some(buf) => buf,
             },
@@ -575,7 +575,7 @@ impl Context {
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::RegisterCiRepo{
-            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_id) {
+            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_key) {
               None => return None,
               Some(buf) => buf,
             },
@@ -611,7 +611,7 @@ impl Context {
       .send_auth(
           self.api_cfg.as_ref().map(|api| &api.auth),
           &Bot2RegistryV0::RegisterMachine{
-            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_id) {
+            api_key: match base64_str_to_vec(48, &api_cfg.auth.api_key) {
               None => return None,
               Some(buf) => buf,
             },
@@ -931,7 +931,7 @@ impl Context {
                 // FIXME: get rid of unwraps.
                 let new_api_cfg = ApiConfig{
                   auth: ApiAuth{
-                    api_id,
+                    api_key: api_id,
                     secret_token,
                   },
                 };
@@ -1155,7 +1155,7 @@ impl Context {
                   .send_auth(
                       self.api_cfg.as_ref().map(|api| &api.auth),
                       &Bot2RegistryV0::_NewCiRun(Some(_NewCiRunV0{
-                        //api_key: api_cfg.auth.api_id.clone(),
+                        //api_key: api_cfg.auth.api_key.clone(),
                         api_key: api_key.clone(),
                         ci_run_key: ci_run_key.clone(),
                         task_count: Some(task_count),

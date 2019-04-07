@@ -27,7 +27,7 @@ mod config_toml {
 
   #[derive(Debug, Default, Deserialize)]
   pub struct ApiAuth {
-    pub api_id: Option<String>,
+    pub api_key: Option<String>,
     pub secret_token: Option<String>,
   }
 
@@ -128,7 +128,7 @@ mod config_toml {
 
 #[derive(Debug, Serialize)]
 pub struct ApiAuth {
-  pub api_id: String,
+  pub api_key: String,
   pub secret_token: String,
 }
 
@@ -147,7 +147,7 @@ impl ApiConfig {
     let api = ApiToml::open(path)?;
     let auth = api.auth.unwrap_or_default();
     let auth = ApiAuth{
-      api_id: auth.api_id.ok_or_else(|| fail("api config: auth: missing api_id"))?,
+      api_key: auth.api_key.ok_or_else(|| fail("api config: auth: missing api_key"))?,
       secret_token: auth.secret_token.ok_or_else(|| fail("api config: auth: missing secret_token"))?,
     };
     Ok(ApiConfig{
@@ -207,7 +207,7 @@ impl Config {
             .map_err(|_| fail("failed to write to api config file"))?;
           writeln!(&mut api_writer, "[auth]")
             .map_err(|_| fail("failed to write to api config file"))?;
-          writeln!(&mut api_writer, "api_id = \"YOUR_API_ID\"")
+          writeln!(&mut api_writer, "api_key = \"YOUR_API_KEY\"")
             .map_err(|_| fail("failed to write to api config file"))?;
           writeln!(&mut api_writer, "secret_token = \"YOUR_SECRET_TOKEN\"")
             .map_err(|_| fail("failed to write to api config file"))?;
