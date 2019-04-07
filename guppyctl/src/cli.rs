@@ -513,9 +513,10 @@ pub fn install_self(user: bool, user_prefix: Option<PathBuf>, alt_sysroot_path: 
   let bot_dir = match user {
     false => PathBuf::from("/usr/local/bin"),
     true  => {
-      let d = user_prefix.clone().or_else(|| home_dir())
-        .ok_or_else(|| fail("Failed to find user home directory"))?
-        .join(".guppybot")
+      let d = user_prefix.clone().or_else(|| {
+        home_dir().map(|d| d.join(".guppybot"))
+      })
+        .ok_or_else(|| fail("Failed to find user directory"))?
         .join("bin");
       create_dir_all(&d).ok();
       d
@@ -542,9 +543,10 @@ pub fn install_self(user: bool, user_prefix: Option<PathBuf>, alt_sysroot_path: 
   let config = match user {
     false => Config::default(),
     true  => {
-      let d = user_prefix.clone().or_else(|| home_dir())
-        .ok_or_else(|| fail("Failed to find user home directory"))?
-        .join(".guppybot")
+      let d = user_prefix.clone().or_else(|| {
+        home_dir().map(|d| d.join(".guppybot"))
+      })
+        .ok_or_else(|| fail("Failed to find user directory"))?
         .join("conf");
       create_dir_all(&d).ok();
       Config::with_dir(d)
@@ -556,14 +558,16 @@ pub fn install_self(user: bool, user_prefix: Option<PathBuf>, alt_sysroot_path: 
     None => match user {
       false => Sysroot::default(),
       true  => {
-        let base_dir = user_prefix.clone().or_else(|| home_dir())
-          .ok_or_else(|| fail("Failed to find user home directory"))?
-          .join(".guppybot")
+        let base_dir = user_prefix.clone().or_else(|| {
+          home_dir().map(|d| d.join(".guppybot"))
+        })
+          .ok_or_else(|| fail("Failed to find user directory"))?
           .join("lib");
         create_dir_all(&base_dir).ok();
-        let sock_dir = user_prefix.clone().or_else(|| home_dir())
-          .ok_or_else(|| fail("Failed to find user home directory"))?
-          .join(".guppybot")
+        let sock_dir = user_prefix.clone().or_else(|| {
+          home_dir().map(|d| d.join(".guppybot"))
+        })
+          .ok_or_else(|| fail("Failed to find user directory"))?
           .join("run");
         create_dir_all(&sock_dir).ok();
         Sysroot{base_dir, sock_dir}

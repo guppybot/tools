@@ -192,12 +192,12 @@ impl CtlChannel {
     let socket_path = match user {
       false => PathBuf::from("/var/run/guppybot.sock"),
       true  => {
-        let d = user_prefix.clone().or_else(|| home_dir())
-          .ok_or_else(|| fail("Failed to find user home directory"))?
-          .join(".guppybot")
+        user_prefix.clone().or_else(|| {
+          home_dir().map(|d| d.join(".guppybot"))
+        })
+          .ok_or_else(|| fail("Failed to find user directory"))?
           .join("run")
-          .join("guppybot.sock");
-        d
+          .join("guppybot.sock")
       }
     };
     CtlChannel::open_path(&socket_path)

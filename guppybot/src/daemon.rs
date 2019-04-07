@@ -350,14 +350,16 @@ impl Context {
     let sysroot = match user_arg {
       false => Sysroot::default(),
       true  => {
-        let base_dir = user_prefix_arg.clone().or_else(|| home_dir())
-          .ok_or_else(|| fail("Failed to find user home directory"))?
-          .join(".guppybot")
+        let base_dir = user_prefix_arg.clone().or_else(|| {
+          home_dir().map(|d| d.join(".guppybot"))
+        })
+          .ok_or_else(|| fail("Failed to find user directory"))?
           .join("lib");
         create_dir_all(&base_dir).ok();
-        let sock_dir = user_prefix_arg.clone().or_else(|| home_dir())
-          .ok_or_else(|| fail("Failed to find user home directory"))?
-          .join(".guppybot")
+        let sock_dir = user_prefix_arg.clone().or_else(|| {
+          home_dir().map(|d| d.join(".guppybot"))
+        })
+          .ok_or_else(|| fail("Failed to find user directory"))?
           .join("run");
         create_dir_all(&sock_dir).ok();
         Sysroot{base_dir, sock_dir}
@@ -366,9 +368,10 @@ impl Context {
     let config = match user_arg {
       false => Config::default(),
       true  => {
-        let config_dir = user_prefix_arg.clone().or_else(|| home_dir())
-          .ok_or_else(|| fail("Failed to find user home directory"))?
-          .join(".guppybot")
+        let config_dir = user_prefix_arg.clone().or_else(|| {
+          home_dir().map(|d| d.join(".guppybot"))
+        })
+          .ok_or_else(|| fail("Failed to find user directory"))?
           .join("conf");
         create_dir_all(&config_dir).ok();
         Config{config_dir}
