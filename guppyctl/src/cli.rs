@@ -729,6 +729,7 @@ pub fn register_machine(user: bool, user_prefix: Option<PathBuf>) -> Maybe {
   println!("    machine config: {:?}", machine_cfg);
   println!("");
   print!("Register this machine info with guppybot.org? [Y/n] ");
+  stdout().flush().unwrap();
   let mut yes = false;
   let mut no = false;
   for _ in 0 .. 3 {
