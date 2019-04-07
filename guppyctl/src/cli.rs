@@ -229,11 +229,11 @@ pub fn _dispatch(git_head_commit: &[u8], guppybot_bin: &[u8]) -> ! {
         Ok(_) => 0,
       }
     }*/
-    ("register-machine", Some(matches)) => {
+    ("register", Some(matches)) => {
       let user = matches.is_present("USER");
       match register_machine(user) {
         Err(e) => {
-          eprintln!("register-machine: {:?}", e);
+          eprintln!("register: {:?}", e);
           1
         }
         Ok(_) => 0,
