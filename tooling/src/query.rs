@@ -148,23 +148,32 @@ impl Query for DistroIdV0 {
   }
 }
 
+fn query_distro_codename_lsb_release() -> Maybe<DistroCodenameV0> {
+  let output = Command::new("lsb_release").arg("-cs").output()
+    .map_err(|_| fail("failed to run `lsb_release -cs`"))?;
+  if !output.status.success() {
+    return Err(fail(format!("`lsb_release` failed with exit status {:?}", output.status.code())));
+  }
+  match from_utf8(&output.stdout) {
+    Ok("wheezy\n") => Ok(DistroCodenameV0::DebianWheezy),
+    Ok("jessie\n") => Ok(DistroCodenameV0::DebianJessie),
+    Ok("stretch\n") => Ok(DistroCodenameV0::DebianStretch),
+    Ok("buster\n") => Ok(DistroCodenameV0::DebianBuster),
+    Ok("trusty\n") => Ok(DistroCodenameV0::UbuntuTrusty),
+    Ok("xenial\n") => Ok(DistroCodenameV0::UbuntuXenial),
+    Ok("bionic\n") => Ok(DistroCodenameV0::UbuntuBionic),
+    x => return Err(fail(format!("`lsb_release` returned unsupported output: {:?}", x))),
+  }
+}
+
+fn query_distro_codename_os_release() -> Maybe<DistroCodenameV0> {
+  Err(fail("unimplemented"))
+}
+
 impl Query for DistroCodenameV0 {
   fn query() -> Maybe<DistroCodenameV0> {
-    let output = Command::new("lsb_release").arg("-cs").output()
-      .map_err(|_| fail("failed to run `lsb_release -cs`"))?;
-    if !output.status.success() {
-      return Err(fail(format!("`lsb_release` failed with exit status {:?}", output.status.code())));
-    }
-    match from_utf8(&output.stdout) {
-      Ok("wheezy\n") => Ok(DistroCodenameV0::DebianWheezy),
-      Ok("jessie\n") => Ok(DistroCodenameV0::DebianJessie),
-      Ok("stretch\n") => Ok(DistroCodenameV0::DebianStretch),
-      Ok("buster\n") => Ok(DistroCodenameV0::DebianBuster),
-      Ok("trusty\n") => Ok(DistroCodenameV0::UbuntuTrusty),
-      Ok("xenial\n") => Ok(DistroCodenameV0::UbuntuXenial),
-      Ok("bionic\n") => Ok(DistroCodenameV0::UbuntuBionic),
-      x => return Err(fail(format!("`lsb_release` returned unsupported output: {:?}", x))),
-    }
+    query_distro_codename_lsb_release()
+      .or_else(|_| query_distro_codename_os_release())
   }
 }
 
